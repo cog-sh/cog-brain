@@ -31,11 +31,11 @@ from mcp.server.fastmcp import FastMCP
 
 from cog_brain import chunking, config
 from cog_brain.backends import get_backend
+from cog_brain.graph import link_index, raw_links
 
 VAULT = config.VAULT
 
 SYSTEM_PREFIXES = ("daily/", "attachments/", "90-meta/", "90-archive/", ".obsidian/", ".trash/")
-ATTACHMENT_RE = re.compile(r"\.(png|jpe?g|gif|svg|webp|avif|pdf|mp4|mov|webm|m4a|mp3|excalidraw|canvas)$", re.IGNORECASE)
 FM_ORDER = ["title", "type", "status", "date", "updated", "tags", "moc", "aliases", "description",
             "retracted", "supersedes", "superseded_by"]
 
@@ -157,33 +157,6 @@ def note_flags(rel: str) -> dict:
 
 
 # --------------------------------------------------------------------------- wiki-links
-
-def link_index() -> dict[str, str]:
-    """lowercased note stem AND lowercased title -> vault-relative path."""
-    idx: dict[str, str] = {}
-    for p, rel in chunking.iter_notes():
-        idx.setdefault(p.stem.lower(), rel)
-        try:
-            title = chunking.parse_note(p)[1]
-        except Exception as e:
-            print(f"link index: cannot parse {rel}: {e}", file=sys.stderr)
-            title = p.stem
-        if title:
-            idx.setdefault(str(title).lower(), rel)
-    return idx
-
-CODE_FENCE_RE = re.compile(r"^```.*?^```", re.DOTALL | re.MULTILINE)
-INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
-
-def strip_code(text: str) -> str:
-    """Drop fenced blocks and inline spans: Obsidian does not render a wiki-link inside code,
-    so ``supersedes: [[olds-note]]`` in a note ABOUT the format is not a link to a note."""
-    return INLINE_CODE_RE.sub(" ", CODE_FENCE_RE.sub(" ", text))
-
-def raw_links(text: str) -> list[str]:
-    """Wiki-link targets, code spans and attachment embeds excluded (`![[Pasted image …png]]` is not a note)."""
-    targets = {m.group(1).split("#")[0].strip() for m in re.finditer(r"\[\[([^\]|#]+)", strip_code(text))}
-    return sorted(t for t in targets if t and not ATTACHMENT_RE.search(t))
 
 def resolve_links(text: str, idx: dict[str, str] | None = None) -> tuple[list[str], list[str]]:
     """(resolved vault-relative paths, unresolved link targets)."""
@@ -558,7 +531,7 @@ def serve_simple_http():
 def main() -> None:
     # `cog-brain <op>` runs the operator CLI; a bare `cog-brain` (what MCP clients
     # spawn) serves the MCP stdio server.
-    ops = {"status", "doctor", "backends", "reindex", "inspect", "mcp-config", "install"}
+    ops = {"status", "doctor", "backends", "reindex", "health", "inspect", "mcp-config", "install"}
     if any(tok in ops for tok in sys.argv[1:]):
         from cog_brain import cli
         cli.main()

@@ -106,6 +106,21 @@ def _install(args) -> int:
     return 0
 
 
+def _health(args) -> int:
+    from cog_brain import graph
+    h = graph.health()
+    if args.json:
+        print(json.dumps(h, ensure_ascii=False, indent=1))
+        return 0
+    v = h["verdicts"]
+    print(f"pages={h['pages']}  links={h['links']}  avg_degree={h['avg_degree']} ({v['degree']})")
+    print(f"orphans={h['orphan_count']} ({h['orphan_rate']:.1%}, {v['orphans']})")
+    print(f"main_component={h['main_component_share']:.1%} ({v['connectivity']}), "
+          f"disconnected={h['disconnected_pages']}")
+    print(f"stale(>{h['thresholds']['stale_days']}d)={h['stale_count']} ({h['stale_rate']:.1%})")
+    return 0
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="cog-brain", description="cog-brain operator CLI")
     ap.add_argument("--backend", default=None, help="override COG_BRAIN_BACKEND")
@@ -115,6 +130,8 @@ def main() -> None:
     sub.add_parser("doctor", help="diagnose vault, state dir, and the active backend")
     sub.add_parser("backends", help="list memory backends and show the active one")
     sub.add_parser("reindex", help="rebuild the index").add_argument("--full", action="store_true")
+    hp = sub.add_parser("health", help="vault health: 4 metrics with thresholds")
+    hp.add_argument("--json", action="store_true")
 
     insp = sub.add_parser("inspect", help="retrieval inspection")
     isub = insp.add_subparsers(dest="what", required=True)
@@ -144,7 +161,8 @@ def main() -> None:
         rc = {"chunks": _inspect_chunks, "query": _inspect_query}[a.what](a)
     else:
         rc = {"status": _status, "doctor": _doctor, "backends": _backends,
-              "reindex": _reindex, "mcp-config": _mcp_config, "install": _install}[a.cmd](a)
+              "reindex": _reindex, "health": _health,
+              "mcp-config": _mcp_config, "install": _install}[a.cmd](a)
     sys.exit(rc)
 
 
