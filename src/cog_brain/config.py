@@ -1,36 +1,103 @@
 """Shared configuration for the cog-brain MCP server and indexer.
 
-The tooling used to live *inside* the vault (`~/SECOND_BRAIN/tools/`) and derived
-every path from its own location. It now lives in its own project, so each path
-and endpoint is resolved here (env-overridable) and imported by both modules —
-one source of truth instead of the two copies that used to drift apart.
+Resolution order, highest first:
 
-Environment overrides
----------------------
-- ``COG_BRAIN_VAULT``      Obsidian vault root           (default ``~/SECOND_BRAIN``)
-- ``COG_BRAIN_STATE_DIR``  manifest + lock location       (default ``~/.local/state/cog-brain``)
-- ``COG_BRAIN_QDRANT_URL`` Qdrant endpoint                (default ``http://127.0.0.1:6333``)
-- ``COG_BRAIN_OLLAMA``     Ollama embeddings endpoint     (default ``http://127.0.0.1:11434/api/embed``)
-- ``COG_BRAIN_EMBED_MODEL`` embedding model name          (default ``qwen3-embedding:0.6b``)
-- ``COG_BRAIN_COLLECTION`` Qdrant collection name         (default ``cog_brain``)
+1. environment variable (``COG_BRAIN_*``),
+2. the config file (``COG_BRAIN_CONFIG``, default ``~/.config/cog-brain/config.toml``),
+3. the built-in default.
+
+The config file is TOML with one key per setting (see the template below), so a
+machine keeps its settings out of ``.zshrc`` and in one readable file. Paths are
+tilde-expanded. A missing or malformed file is ignored, never fatal.
+
+```toml
+# ~/.config/cog-brain/config.toml
+backend    = "qdrant"          # sqlite (default) | qdrant | markdown
+vault      = "~/SECOND_BRAIN"  # Obsidian vault root
+state_dir  = "~/.local/state/cog-brain"
+qdrant_url = "http://127.0.0.1:6333"
+ollama     = "http://127.0.0.1:11434/api/embed"
+embed_model = "qwen3-embedding:0.6b"
+collection = "cog_brain"
+```
 """
 from __future__ import annotations
 
 import os
+import tomllib
 from pathlib import Path
 
-VAULT = Path(os.environ.get("COG_BRAIN_VAULT", "~/SECOND_BRAIN")).expanduser()
-STATE_DIR = Path(os.environ.get("COG_BRAIN_STATE_DIR", "~/.local/state/cog-brain")).expanduser()
+CONFIG_PATH = Path(os.environ.get("COG_BRAIN_CONFIG", "~/.config/cog-brain/config.toml")).expanduser()
+
+# key (in the TOML file) -> environment variable
+_KEYS = {
+    "vault": "COG_BRAIN_VAULT",
+    "state_dir": "COG_BRAIN_STATE_DIR",
+    "sqlite_db": "COG_BRAIN_SQLITE_DB",
+    "backend": "COG_BRAIN_BACKEND",
+    "qdrant_url": "COG_BRAIN_QDRANT_URL",
+    "ollama": "COG_BRAIN_OLLAMA",
+    "embed_model": "COG_BRAIN_EMBED_MODEL",
+    "collection": "COG_BRAIN_COLLECTION",
+}
+
+
+def _load_file() -> dict:
+    if not CONFIG_PATH.is_file():
+        return {}
+    try:
+        with CONFIG_PATH.open("rb") as f:
+            data = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+    return {k: v for k, v in data.items() if k in _KEYS and isinstance(v, (str, int, float))}
+
+
+_FILE = _load_file()
+
+
+def _sources() -> dict[str, str]:
+    """For each key: 'env' | 'file' | 'default' (for `cog-brain config`)."""
+    return {
+        k: ("env" if os.environ.get(env) is not None else "file" if k in _FILE else "default")
+        for k, env in _KEYS.items()
+    }
+
+
+_SOURCES = _sources()
+
+
+def _get(key: str, default: str) -> str:
+    env = os.environ.get(_KEYS[key])
+    if env is not None:
+        return env
+    if key in _FILE:
+        return str(_FILE[key])
+    return default
+
+
+VAULT = Path(_get("vault", "~/SECOND_BRAIN")).expanduser()
+STATE_DIR = Path(_get("state_dir", "~/.local/state/cog-brain")).expanduser()
 DB = STATE_DIR / "index.db"
 LOCK = STATE_DIR / ".index.lock"
 
-QDRANT_URL = os.environ.get("COG_BRAIN_QDRANT_URL", "http://127.0.0.1:6333")
-OLLAMA = os.environ.get("COG_BRAIN_OLLAMA", "http://127.0.0.1:11434/api/embed")
-EMBED_MODEL = os.environ.get("COG_BRAIN_EMBED_MODEL", "qwen3-embedding:0.6b")
-COLLECTION = os.environ.get("COG_BRAIN_COLLECTION", "cog_brain")
+BACKEND = _get("backend", "sqlite")
+SQLITE_PATH = Path(_get("sqlite_db", str(STATE_DIR / "sqlite.db"))).expanduser()
+QDRANT_URL = _get("qdrant_url", "http://127.0.0.1:6333")
+OLLAMA = _get("ollama", "http://127.0.0.1:11434/api/embed")
+EMBED_MODEL = _get("embed_model", "qwen3-embedding:0.6b")
+COLLECTION = _get("collection", "cog_brain")
 
-# Storage/retrieval engine behind the tool surface. Default "sqlite": one file,
-# FTS5 index + incremental manifest, no external services. "qdrant" = semantic
-# (dense + BM25, RRF; needs Qdrant + Ollama). "markdown" = no index at all.
-BACKEND = os.environ.get("COG_BRAIN_BACKEND", "sqlite")
-SQLITE_PATH = Path(os.environ.get("COG_BRAIN_SQLITE_DB", str(STATE_DIR / "sqlite.db"))).expanduser()
+
+def describe() -> dict:
+    return {
+        "config_file": str(CONFIG_PATH),
+        "config_file_exists": CONFIG_PATH.is_file(),
+        "precedence": "env > file > default",
+        "resolved": {
+            "vault": str(VAULT), "state_dir": str(STATE_DIR), "backend": BACKEND,
+            "sqlite_db": str(SQLITE_PATH), "qdrant_url": QDRANT_URL, "ollama": OLLAMA,
+            "embed_model": EMBED_MODEL, "collection": COLLECTION,
+        },
+        "sources": _SOURCES,
+    }

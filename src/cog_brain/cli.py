@@ -160,6 +160,12 @@ def _ingest(args) -> int:
     return 0
 
 
+def _config(args) -> int:
+    from cog_brain import config
+    print(json.dumps(config.describe(), ensure_ascii=False, indent=1))
+    return 0
+
+
 def main() -> None:
     try:  # let `cog-brain ... | head` terminate without a traceback
         import signal
@@ -171,6 +177,7 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("status", help="index health (notes on disk vs indexed, staleness)")
+    sub.add_parser("config", help="show resolved settings and where each comes from")
     sub.add_parser("doctor", help="diagnose vault, state dir, and the active backend")
     sub.add_parser("backends", help="list memory backends and show the active one")
     sub.add_parser("reindex", help="rebuild the index").add_argument("--full", action="store_true")
@@ -221,8 +228,8 @@ def main() -> None:
         rc = _ingest(a)
     else:
         rc = {"status": _status, "doctor": _doctor, "backends": _backends,
-              "reindex": _reindex, "health": _health, "lint": _lint, "graph": _graph,
-              "mcp-config": _mcp_config, "install": _install}[a.cmd](a)
+              "config": _config, "reindex": _reindex, "health": _health, "lint": _lint,
+              "graph": _graph, "mcp-config": _mcp_config, "install": _install}[a.cmd](a)
     sys.exit(rc)
 
 

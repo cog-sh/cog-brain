@@ -111,6 +111,7 @@ Adding one is a single module implementing the `Backend` protocol
 
 ```bash
 cog-brain status                 # index health: notes on disk vs indexed, staleness
+cog-brain config                 # resolved settings + where each value comes from
 cog-brain health                 # 4 metrics with verdicts (orphans, degree, connectivity, stale)
 cog-brain lint                   # broken links · orphans · stubs · missing frontmatter
 cog-brain doctor                 # diagnose vault, state dir, active backend
@@ -129,8 +130,21 @@ cog-brain backends | reindex | mcp-config | install
 
 ## Configuration
 
+Settings resolve **env → `~/.config/cog-brain/config.toml` → default**, so a machine
+keeps them in one readable file instead of a shell profile:
+
+```toml
+# ~/.config/cog-brain/config.toml
+backend = "qdrant"
+vault   = "~/SECOND_BRAIN"
+```
+
+`cog-brain config` prints the resolved values and where each came from. A missing or
+malformed file is ignored, never fatal. Point elsewhere with `COG_BRAIN_CONFIG`.
+
 | variable | meaning | default |
 | --- | --- | --- |
+| `COG_BRAIN_CONFIG` | config file path | `~/.config/cog-brain/config.toml` |
 | `COG_BRAIN_VAULT` | vault root | `~/SECOND_BRAIN` |
 | `COG_BRAIN_BACKEND` | `sqlite` · `qdrant` · `markdown` | `sqlite` |
 | `COG_BRAIN_STATE_DIR` | index + manifest location | `~/.local/state/cog-brain` |

@@ -54,6 +54,9 @@ backend-independent.
 
 ## Conventions
 
+- **Settings resolve env → `~/.config/cog-brain/config.toml` → default** (`config.py`).
+  `cog-brain config` shows the resolved values and their source. Do not add settings to
+  the product's code paths that bypass this.
 - **The product is `cog-brain`; the vault folder may be anything** (default `~/SECOND_BRAIN`).
   Do not rename the vault. Env prefix is `COG_BRAIN_`; the package is `cog_brain`.
 - `README.md` is for humans (polished); `AGENTS.md` is for agents. Keep it that way.
