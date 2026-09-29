@@ -13,7 +13,10 @@ from qdrant_client import QdrantClient, models
 import requests
 from fastembed import SparseTextEmbedding
 
-from second_brain import config
+from second_brain import chunking, config
+from second_brain.chunking import (
+    CHUNKER_VERSION, contextualize, extract_links, iter_notes, parse_note, split_by_headings,
+)
 
 VAULT = config.VAULT
 DB = config.DB
@@ -23,11 +26,8 @@ COLLECTION = config.COLLECTION
 EMBED_MODEL = config.EMBED_MODEL
 OLLAMA = config.OLLAMA
 DIMS = 1024
-EXCLUDE_DIRS = {".obsidian", ".trash", ".git", ".smart-env", "90-archive", "attachments", "daily"}
 
-MAX_FILE_BYTES = 1_000_000
-TAU_MAX = 1500  # chars, soft max per chunk
-CHUNKER_VERSION = "1"  # bump to force re-chunk of every file
+
 def embed_texts(texts: list[str]) -> list[list[float]]:
     out = []
     for i in range(0, len(texts), 16):
@@ -53,82 +53,6 @@ def sparse(texts: list[str]) -> list[models.SparseVector]:
     for v in _sparse_model.embed(texts):
         vecs.append(models.SparseVector(indices=v.indices.tolist(), values=v.values.tolist()))
     return vecs
-
-def clean_wikilinks(text: str) -> str:
-    text = re.sub(r"!?\[\[([^\]|#]+)#([^\]|]+)\|([^\]]+)\]\]", r"\3", text)
-    text = re.sub(r"!?\[\[([^\]|#]+)#([^\]|]+)\]\]", r"\1 > \2", text)
-    text = re.sub(r"!?\[\[([^\]|]+)\|([^\]]+)\]\]", r"\2", text)
-    text = re.sub(r"!?\[\[([^\]]+)\]\]", r"\1", text)
-    text = re.sub(r"```[a-zA-Z0-9_-]*\n.*?\n```", lambda m: m.group(0), text, flags=re.S)
-    return text
-
-def extract_links(text: str) -> list[str]:
-    return sorted({m.group(1).split("#")[0].strip() for m in re.finditer(r"\[\[([^\]|#]+)", text)})
-
-def split_by_headings(title: str, tags: list[str], aliases: list[str], body: str) -> list[tuple[str, str]]:
-    """Return [(heading_path, chunk_text)]. Notes <=~1200 tokens -> single chunk."""
-    if len(body) <= 5000:
-        return [("", body)]
-    lines = body.splitlines()
-    chunks, head_stack = [], []
-    cur_head = ""
-    buf: list[str] = []
-    def flush():
-        nonlocal buf, cur_head
-        if not buf: return
-        text = "\n".join(buf).strip()
-        if text: chunks.append((cur_head, text))
-        buf = []
-    in_code = False
-    for line in lines:
-        if line.strip().startswith("```"): in_code = not in_code; buf.append(line); continue
-        m = re.match(r"^(#{1,6})\s+(.*)$", line) if not in_code else None
-        if m:
-            flush()
-            level = len(m.group(1)); head_stack = head_stack[: level - 1] + [m.group(2)]
-            cur_head = " > ".join(head_stack)
-            buf = [line]
-        else:
-            buf.append(line)
-            if sum(len(x) for x in buf) > TAU_MAX * 2: flush()  # hard cap fallback
-    flush()
-    return chunks or [("", body)]
-
-def contextualize(title, tags, aliases, heading_path, chunk_text):
-    parts = [title]
-    if aliases: parts.append("aka: " + ", ".join(aliases))
-    if tags: parts.append("tags: " + ", ".join(tags))
-    if heading_path: parts.append(heading_path)
-    parts.append(chunk_text)
-    return "\n".join(parts)
-
-def iter_notes():
-    for p in VAULT.rglob("*.md"):
-        rel = p.relative_to(VAULT).as_posix()
-        if any(rel.startswith(e.rstrip("/")) for e in EXCLUDE_DIRS): continue
-        if p.stat().st_size > MAX_FILE_BYTES: continue
-        yield p, rel
-
-def parse_note(p: Path):
-    raw = p.read_text(encoding="utf-8", errors="replace")
-    fm, body = {}, raw
-    if raw.startswith("---"):
-        end = raw.find("\n---", 3)
-        if end > 0:
-            for line in raw[3:end].splitlines():
-                m = re.match(r"^(\w[\w-]*):\s*(.*)$", line)
-                if m:
-                    val = m.group(2).strip().strip('"')
-                    if val.startswith("[") and val.endswith("]"):
-                        val = [v.strip().strip('"') for v in val[1:-1].split(",") if v.strip()]
-                    fm[m.group(1)] = val
-            body = raw[end + 4 :]
-    title = fm.get("title") or p.stem
-    tags = fm.get("tags", [])
-    if isinstance(tags, str): tags = [t.strip() for t in tags.split(",") if t.strip()]
-    aliases = fm.get("aliases", []) or []
-    if isinstance(aliases, str): aliases = [aliases]
-    return fm, title, tags, aliases, body
 
 def ensure_collection(client: QdrantClient):
     if client.collection_exists(COLLECTION):

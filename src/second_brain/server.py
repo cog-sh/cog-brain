@@ -28,19 +28,12 @@ from pathlib import Path
 from datetime import date, datetime
 
 from mcp.server.fastmcp import FastMCP
-from qdrant_client import QdrantClient, models
-import requests
-from fastembed import SparseTextEmbedding
 
 from second_brain import config
 from second_brain import indexer as vix
+from second_brain.backends import get_backend
 
 VAULT = config.VAULT
-QDRANT_URL = config.QDRANT_URL
-COLLECTION = config.COLLECTION
-EMBED_MODEL = config.EMBED_MODEL
-OLLAMA = config.OLLAMA
-QUERY_PREFIX = "Instruct: Given a user query, retrieve relevant notes from a personal knowledge base\nQuery: "
 
 SYSTEM_PREFIXES = ("daily/", "attachments/", "90-meta/", "90-archive/", ".obsidian/", ".trash/")
 ATTACHMENT_RE = re.compile(r"\.(png|jpe?g|gif|svg|webp|avif|pdf|mp4|mov|webm|m4a|mp3|excalidraw|canvas)$", re.IGNORECASE)
@@ -48,45 +41,10 @@ FM_ORDER = ["title", "type", "status", "date", "updated", "tags", "moc", "aliase
             "retracted", "supersedes", "superseded_by"]
 
 mcp = FastMCP("second-brain")
-client = QdrantClient(url=QDRANT_URL, timeout=60)
-_sparse = None
+backend = get_backend()
 
 
 # --------------------------------------------------------------------------- search
-
-def embed_query(q: str) -> list[float]:
-    r = requests.post(OLLAMA, json={"model": EMBED_MODEL, "input": [QUERY_PREFIX + q], "keep_alive": "24h"}, timeout=300)
-    r.raise_for_status()
-    return r.json()["embeddings"][0]
-
-def sparse_one(text: str) -> models.SparseVector:
-    global _sparse
-    if _sparse is None:
-        _sparse = SparseTextEmbedding(model_name="Qdrant/bm25")
-    v = next(iter(_sparse.embed([text])))
-    return models.SparseVector(indices=v.indices.tolist(), values=v.values.tolist())
-
-def hybrid_search(query: str, k: int, flt: models.Filter | None):
-    dense = embed_query(query)
-    bm25 = sparse_one(query)
-    return client.query_points(
-        COLLECTION,
-        prefetch=[
-            models.Prefetch(query=dense, using="dense", limit=20, filter=flt),
-            models.Prefetch(query=bm25, using="bm25", limit=20, filter=flt),
-        ],
-        query=models.FusionQuery(fusion=models.Fusion.RRF),
-        limit=k,
-        with_payload=True,
-    ).points
-
-def build_filter(tag: str | None, folder: str | None) -> models.Filter | None:
-    must = []
-    if tag:
-        must.append(models.FieldCondition(key="tags", match=models.MatchValue(value=tag)))
-    if folder:
-        must.append(models.FieldCondition(key="file_path", match=models.MatchText(text=folder)))
-    return models.Filter(must=must) if must else None
 
 def cite(p) -> dict:
     pl = p.payload
@@ -374,7 +332,7 @@ def semantic_search(query: str, k: int = 8, tag: str | None = None, folder: str 
     behaviour). Every result carries `index_stale`: how many notes changed since the last index —
     0 means the results are current, -1 means the index has never run. Trust accordingly."""
     per_note = max(1, chunks_per_note)
-    pts = hybrid_search(query, k * 3 * per_note, build_filter(tag, folder))
+    pts = backend.search(query, k * 3 * per_note, tag=tag, folder=folder)
     seen: dict[str, int] = {}
     uniq = []
     for p in pts:
@@ -400,8 +358,7 @@ def find_related(file_path: str, k: int = 10) -> str:
         return err
     rel = p.relative_to(VAULT).as_posix()
     body = note_body(p)
-    sem = hybrid_search(body[:2000], 8, models.Filter(
-        must_not=[models.FieldCondition(key="file_path", match=models.MatchValue(value=rel))]))
+    sem = backend.search(body[:2000], 8, exclude=rel)
     idx = link_index()
     out = {
         "semantic_neighbors": [cite(x) | {"text": (x.payload.get("text") or "")[:300]} for x in sem],
