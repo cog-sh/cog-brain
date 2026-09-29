@@ -83,6 +83,29 @@ def _inspect_query(args) -> int:
     return 0
 
 
+def _mcp_config(args) -> int:
+    from cog_brain import harnesses as H
+    env = dict(kv.split("=", 1) for kv in args.env)
+    spec = H.build_spec(source=args.source, env=env)
+    names = [args.harness] if args.harness else sorted(H.HARNESSES)
+    for n in names:
+        h = H.resolve(n)
+        print(f"# {h.doc}")
+        print(H.render(h, spec))
+    return 0
+
+
+def _install(args) -> int:
+    from cog_brain import harnesses as H
+    env = dict(kv.split("=", 1) for kv in args.env)
+    spec = H.build_spec(source=args.source, env=env)
+    h = H.resolve(args.harness)
+    path = H.target_path(h, args.scope)
+    key = H.merge(path, h, spec)
+    print(f"wrote {key} -> {path}")
+    return 0
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="cog-brain", description="cog-brain operator CLI")
     ap.add_argument("--backend", default=None, help="override COG_BRAIN_BACKEND")
@@ -103,14 +126,25 @@ def main() -> None:
     iq.add_argument("--tag")
     iq.add_argument("--folder")
 
+    mc = sub.add_parser("mcp-config", help="print paste-ready MCP config for a harness")
+    mc.add_argument("--harness", help="harness name (default: all)")
+    mc.add_argument("--source", help="uvx --from source (default: the cog-brain repo)")
+    mc.add_argument("--env", action="append", default=[], help="K=V, repeatable")
+
+    ins = sub.add_parser("install", help="write the MCP entry into a harness config")
+    ins.add_argument("--harness", required=True)
+    ins.add_argument("--scope", choices=["global", "project"], default="global")
+    ins.add_argument("--source")
+    ins.add_argument("--env", action="append", default=[], help="K=V, repeatable")
+
     a = ap.parse_args()
     if a.backend:
         config.BACKEND = a.backend
     if a.cmd == "inspect":
         rc = {"chunks": _inspect_chunks, "query": _inspect_query}[a.what](a)
     else:
-        rc = {"status": _status, "doctor": _doctor,
-              "backends": _backends, "reindex": _reindex}[a.cmd](a)
+        rc = {"status": _status, "doctor": _doctor, "backends": _backends,
+              "reindex": _reindex, "mcp-config": _mcp_config, "install": _install}[a.cmd](a)
     sys.exit(rc)
 
 
