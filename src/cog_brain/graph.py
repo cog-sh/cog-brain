@@ -11,8 +11,11 @@ Deliberately **not** measured: raw page/word counts (they grow without meaning).
 """
 from __future__ import annotations
 
+import csv
+import io
 import re
 import sys
+import xml.sax.saxutils as _sax
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
@@ -158,3 +161,88 @@ def health() -> dict:
                        "degree": [DEGREE_MIN, DEGREE_MAX], "main_component": MAIN_COMPONENT_MIN,
                        "stale_days": STALE_DAYS},
     }
+
+
+# --------------------------------------------------------------------------- lint
+
+# Pages that legitimately have no links (catalogs/indexes and repo metadata).
+SYSTEM_PAGES = {"README.md", "AGENTS.md", "AI-GUIDE.md", "index.md", "log.md"}
+STUB_WORDS = 40
+
+
+def lint() -> dict:
+    """Mechanical problems only: broken links, orphans, stubs, missing frontmatter.
+
+    Judgement calls (merging duplicates, deleting) are *reported*, never applied —
+    matching the guide's 'report before repairing' rule."""
+    g = graph()
+    out, inbound, notes = g["out"], g["inbound"], g["notes"]
+    broken, missing, stubs = [], [], []
+    for rel, p in notes.items():
+        raw = p.read_text(encoding="utf-8", errors="replace")
+        fm, _title, _tags, _aliases, body = chunking.parse_note(p)
+        for tgt in raw_links(raw):
+            if tgt.lower() not in link_index():
+                broken.append({"file_path": rel, "link": tgt})
+        miss = [k for k in ("title", "description") if not str(fm.get(k, "")).strip()]
+        if miss and rel not in SYSTEM_PAGES:
+            missing.append({"file_path": rel, "missing": miss})
+        unlinked = not out[rel] and not inbound.get(rel)
+        if unlinked and rel not in SYSTEM_PAGES and len(strip_code(body).split()) < STUB_WORDS:
+            stubs.append(rel)
+    orphans = sorted(r for r in notes
+                     if not out[r] and not inbound.get(r) and r not in SYSTEM_PAGES)
+    broken.sort(key=lambda b: (b["file_path"], b["link"]))
+    missing.sort(key=lambda m: m["file_path"])
+    return {
+        "pages": len(notes),
+        "broken_links": broken,
+        "orphans": orphans,
+        "stubs": sorted(stubs),
+        "missing_frontmatter": missing,
+        "counts": {"broken": len(broken), "orphans": len(orphans), "stubs": len(stubs),
+                   "missing_frontmatter": len(missing)},
+    }
+
+
+# ----------------------------------------------------------------- graph export
+
+def edges() -> list[tuple[str, str]]:
+    g = graph()
+    return sorted((s, d) for s, dsts in g["out"].items() for d in dsts)
+
+
+def _node_types() -> dict[str, str]:
+    return {rel: str(chunking.parse_note(p)[0].get("type", ""))
+            for rel, p in graph()["notes"].items()}
+
+
+def export_csv() -> str:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["source", "target"])
+    for s, d in edges():
+        w.writerow([s, d])
+    return buf.getvalue()
+
+
+def export_graphml() -> str:
+    """GraphML with the frontmatter `type` as a node attribute (Gephi/NetworkX-ready)."""
+    esc = _sax.escape
+    types = _node_types()
+    notes = sorted(graph()["notes"])
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<graphml xmlns="http://graphml.graphdrawing.org/xmlns">',
+        '<key id="type" for="node" attr.name="type" attr.type="string"/>',
+        '<key id="path" for="node" attr.name="path" attr.type="string"/>',
+        '<graph edgedefault="directed">',
+    ]
+    for rel in notes:
+        lines.append(f'  <node id="{esc(rel)}">'
+                     f'<data key="type">{esc(types.get(rel, ""))}</data>'
+                     f'<data key="path">{esc(rel)}</data></node>')
+    for i, (s, d) in enumerate(edges()):
+        lines.append(f'  <edge id="e{i}" source="{esc(s)}" target="{esc(d)}"/>')
+    lines += ['</graph>', '</graphml>', '']
+    return "\n".join(lines)

@@ -121,7 +121,51 @@ def _health(args) -> int:
     return 0
 
 
+def _lint(args) -> int:
+    from cog_brain import graph
+    r = graph.lint()
+    if args.json:
+        print(json.dumps(r, ensure_ascii=False, indent=1))
+        return 0
+    c = r["counts"]
+    print(f"pages={r['pages']}  broken={c['broken']}  orphans={c['orphans']}  "
+          f"stubs={c['stubs']}  missing_frontmatter={c['missing_frontmatter']}")
+    for b in r["broken_links"][:10]:
+        print(f"  broken  {b['file_path']}  ->  [[{b['link']}]]")
+    for m in r["missing_frontmatter"][:10]:
+        print(f"  schema  {m['file_path']}  missing {m['missing']}")
+    for o in r["orphans"][:10]:
+        print(f"  orphan  {o}")
+    for s in r["stubs"][:10]:
+        print(f"  stub    {s}")
+    return 0
+
+
+def _graph(args) -> int:
+    from cog_brain import graph
+    text = graph.export_graphml() if args.export == "graphml" else graph.export_csv()
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+        print(f"wrote {args.export} -> {args.out}")
+    else:
+        print(text, end="")
+    return 0
+
+
+def _ingest(args) -> int:
+    from cog_brain import ingest
+    out = Path(args.to) if args.to else (config.VAULT / "raw")
+    print(json.dumps(ingest.import_chats(args.src, out, args.min_words),
+                     ensure_ascii=False, indent=1))
+    return 0
+
+
 def main() -> None:
+    try:  # let `cog-brain ... | head` terminate without a traceback
+        import signal
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    except (ImportError, AttributeError, ValueError):
+        pass
     ap = argparse.ArgumentParser(prog="cog-brain", description="cog-brain operator CLI")
     ap.add_argument("--backend", default=None, help="override COG_BRAIN_BACKEND")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -132,6 +176,20 @@ def main() -> None:
     sub.add_parser("reindex", help="rebuild the index").add_argument("--full", action="store_true")
     hp = sub.add_parser("health", help="vault health: 4 metrics with thresholds")
     hp.add_argument("--json", action="store_true")
+
+    lp = sub.add_parser("lint", help="broken links, orphans, stubs, missing frontmatter")
+    lp.add_argument("--json", action="store_true")
+
+    gp = sub.add_parser("graph", help="export the wiki-link graph")
+    gp.add_argument("--export", choices=["csv", "graphml"], default="csv")
+    gp.add_argument("--out")
+
+    ing = sub.add_parser("ingest", help="import external material into the vault")
+    isub = ing.add_subparsers(dest="kind", required=True)
+    ic = isub.add_parser("chats", help="Claude/ChatGPT export -> one note per conversation")
+    ic.add_argument("src")
+    ic.add_argument("--to", help="output dir (default <vault>/raw)")
+    ic.add_argument("--min-words", type=int, default=150)
 
     insp = sub.add_parser("inspect", help="retrieval inspection")
     isub = insp.add_subparsers(dest="what", required=True)
@@ -159,9 +217,11 @@ def main() -> None:
         config.BACKEND = a.backend
     if a.cmd == "inspect":
         rc = {"chunks": _inspect_chunks, "query": _inspect_query}[a.what](a)
+    elif a.cmd == "ingest":
+        rc = _ingest(a)
     else:
         rc = {"status": _status, "doctor": _doctor, "backends": _backends,
-              "reindex": _reindex, "health": _health,
+              "reindex": _reindex, "health": _health, "lint": _lint, "graph": _graph,
               "mcp-config": _mcp_config, "install": _install}[a.cmd](a)
     sys.exit(rc)
 
