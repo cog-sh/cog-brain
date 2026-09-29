@@ -29,8 +29,7 @@ from datetime import date, datetime
 
 from mcp.server.fastmcp import FastMCP
 
-from second_brain import config
-from second_brain import indexer as vix
+from second_brain import chunking, config
 from second_brain.backends import get_backend
 
 VAULT = config.VAULT
@@ -162,10 +161,10 @@ def note_flags(rel: str) -> dict:
 def link_index() -> dict[str, str]:
     """lowercased note stem AND lowercased title -> vault-relative path."""
     idx: dict[str, str] = {}
-    for p, rel in vix.iter_notes():
+    for p, rel in chunking.iter_notes():
         idx.setdefault(p.stem.lower(), rel)
         try:
-            title = vix.parse_note(p)[1]
+            title = chunking.parse_note(p)[1]
         except Exception as e:
             print(f"link index: cannot parse {rel}: {e}", file=sys.stderr)
             title = p.stem
@@ -200,43 +199,12 @@ def resolve_links(text: str, idx: dict[str, str] | None = None) -> tuple[list[st
 
 def index_stats() -> dict:
     """Notes on disk, notes in the index, when it last ran, which notes changed since."""
-    on_disk = [rel for _, rel in vix.iter_notes()]
-    indexed: set[str] = set()
-    last_run = None
-    if vix.DB.exists():
-        try:
-            con = sqlite3.connect(vix.DB)
-            try:
-                indexed = {r[0] for r in con.execute("SELECT rel_path FROM files").fetchall()}
-            except sqlite3.OperationalError as e:
-                print(f"index stats: no files table yet ({e})", file=sys.stderr)
-            try:
-                row = con.execute("SELECT value FROM meta WHERE key='last_run'").fetchone()
-                last_run = float(row[0]) if row else None
-            except sqlite3.OperationalError:
-                pass  # meta appears with the first run of the current indexer
-            con.close()
-        except Exception as e:
-            print(f"index stats: cannot read {vix.DB}: {e}", file=sys.stderr)
-    stale = []
-    for rel in on_disk:
-        mtime = (VAULT / rel).stat().st_mtime
-        if rel not in indexed:
-            stale.append(rel)                                   # written after the last scan
-        elif last_run is not None and mtime > last_run:
-            stale.append(rel)                                   # edited after the last run
-    return {
-        "notes_on_disk": len(on_disk),
-        "notes_indexed": len(indexed),
-        "last_run": datetime.fromtimestamp(last_run).isoformat(timespec="seconds") if last_run else None,
-        "stale_count": len(stale),
-        "stale": sorted(stale)[:25],
-    }
+    return backend.status()
 
 def stale_count() -> int:
     """-1 when the index has never run; otherwise how many notes are newer than it."""
     try:
-        return index_stats()["stale_count"]
+        return backend.status()["stale_count"]
     except Exception:
         return -1
 
@@ -276,11 +244,11 @@ def vault_status() -> str:
 def list_notes(tag: str | None = None, folder: str | None = None, limit: int = 200) -> str:
     """Cheap inventory of notes: file_path, title, type, status, tags. Filter by tag or folder prefix."""
     out = []
-    for p, rel in vix.iter_notes():
+    for p, rel in chunking.iter_notes():
         if folder and not rel.startswith(folder.rstrip("/")):
             continue
         try:
-            fm, title, tags, _aliases, _body = vix.parse_note(p)
+            fm, title, tags, _aliases, _body = chunking.parse_note(p)
         except Exception as e:
             print(f"list_notes: cannot parse {rel}: {e}", file=sys.stderr)
             continue
@@ -380,7 +348,7 @@ def backlinks(file_path: str, k: int = 50) -> str:
     rel = p.relative_to(VAULT).as_posix()
     idx = link_index()
     inbound = []
-    for q, qrel in vix.iter_notes():
+    for q, qrel in chunking.iter_notes():
         if qrel == rel:
             continue
         raw = q.read_text(encoding="utf-8", errors="replace")
@@ -398,7 +366,7 @@ def broken_links(limit: int = 200) -> str:
     """Wiki-links that resolve to no existing note (by stem or title), grouped by source note."""
     idx = link_index()
     out = []
-    for p, rel in vix.iter_notes():
+    for p, rel in chunking.iter_notes():
         raw = p.read_text(encoding="utf-8", errors="replace")
         for tgt in raw_links(raw):
             if tgt.lower() not in idx:
@@ -410,7 +378,7 @@ def graph_overview(k: int = 15) -> str:
     """Knowledge-graph overview: hub notes (most outgoing wiki-links — MOC candidates) and orphans (no links at all)."""
     idx = link_index()
     outdegree, inbound_targets, all_fps = {}, set(), set()
-    for p, rel in vix.iter_notes():
+    for p, rel in chunking.iter_notes():
         all_fps.add(rel)
         links = raw_links(p.read_text(encoding="utf-8", errors="replace"))
         if links:

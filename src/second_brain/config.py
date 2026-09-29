@@ -29,6 +29,8 @@ OLLAMA = os.environ.get("SECOND_BRAIN_OLLAMA", "http://127.0.0.1:11434/api/embed
 EMBED_MODEL = os.environ.get("SECOND_BRAIN_EMBED_MODEL", "qwen3-embedding:0.6b")
 COLLECTION = os.environ.get("SECOND_BRAIN_COLLECTION", "second_brain")
 
-# Storage/retrieval engine behind the tool surface: "qdrant" (default, semantic)
-# or "markdown" (zero-infrastructure lexical BM25).
-BACKEND = os.environ.get("SECOND_BRAIN_BACKEND", "qdrant")
+# Storage/retrieval engine behind the tool surface. Default "sqlite": one file,
+# FTS5 index + incremental manifest, no external services. "qdrant" = semantic
+# (dense + BM25, RRF; needs Qdrant + Ollama). "markdown" = no index at all.
+BACKEND = os.environ.get("SECOND_BRAIN_BACKEND", "sqlite")
+SQLITE_PATH = Path(os.environ.get("SECOND_BRAIN_SQLITE_DB", str(STATE_DIR / "sqlite.db"))).expanduser()

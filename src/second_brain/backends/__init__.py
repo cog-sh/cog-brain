@@ -6,6 +6,7 @@ vault — only how chunks are stored and how a query is answered.
 
 Built-in backends:
 
+- ``sqlite``   — one SQLite file: FTS5 lexical index + incremental manifest.
 - ``qdrant``   — dense (Ollama embeddings) + sparse BM25, RRF fusion. Best quality;
                  needs Qdrant + an embedding endpoint.
 - ``markdown`` — zero-infrastructure lexical BM25 straight off the filesystem.
@@ -19,7 +20,7 @@ from __future__ import annotations
 from second_brain import config
 from second_brain.backends.base import Backend, Hit
 
-_BUILTIN = ("qdrant", "markdown")
+_BUILTIN = ("sqlite", "qdrant", "markdown")
 
 
 def available() -> list[str]:
@@ -28,6 +29,9 @@ def available() -> list[str]:
 
 def get_backend(name: str | None = None) -> Backend:
     name = (name or config.BACKEND).strip().lower()
+    if name == "sqlite":
+        from second_brain.backends.sqlite import SqliteBackend
+        return SqliteBackend()
     if name == "qdrant":
         from second_brain.backends.qdrant import QdrantBackend
         return QdrantBackend()

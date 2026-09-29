@@ -93,3 +93,17 @@ class MarkdownBackend:
         cache = _load()
         return {"backend": NAME, "chunks": cache["n"], "terms": len(cache["df"]),
                 "infra": "none"}
+
+    def sync(self, notes=None, full: bool = False) -> dict:
+        """No index to build — the filesystem is the index."""
+        _CACHE.update(at=0.0)
+        n = sum(1 for _ in chunking.iter_notes())
+        return {"changed": 0, "deleted": 0, "total": n, "elapsed": 0.0}
+
+    def status(self) -> dict:
+        disk = sum(1 for _ in chunking.iter_notes())
+        return {"backend": NAME, "notes_on_disk": disk, "notes_indexed": disk,
+                "last_run": None, "stale_count": 0, "stale": []}
+
+    def reset(self) -> None:
+        _CACHE.update(at=0.0, chunks=[], df=Counter(), n=0, avg=1.0)
