@@ -1,7 +1,7 @@
-"""Smoke test for second_brain.server — exercises every tool against the real vault."""
+"""Smoke test for cog_brain.server — exercises every tool against the real vault."""
 import json, sys
 
-import second_brain.server as vm
+import cog_brain.server as vm
 
 VAULT = vm.VAULT
 fails = []

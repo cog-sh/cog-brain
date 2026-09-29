@@ -1,6 +1,6 @@
--- second-brain.nvim — семантический поиск по SECOND_BRAIN (JSON API на 127.0.0.1:8766)
--- Сервер: cd ~/CODES/h/second-brain && uv run second-brain --simple-http
--- В init.lua: lua require('second-brain').setup()
+-- cog-brain.nvim — семантический поиск по SECOND_BRAIN (JSON API на 127.0.0.1:8766)
+-- Сервер: cd ~/CODES/h/cog-brain && uv run cog-brain --simple-http
+-- В init.lua: lua require('cog-brain').setup()
 local M = {}
 local BRAIN = vim.env.HOME .. "/SECOND_BRAIN"
 
@@ -9,9 +9,9 @@ local function api(path, payload, cb)
     "-H", "Content-Type: application/json",
     "-d", vim.json.encode(payload) }, { text = true }, function(res)
     vim.schedule(function()
-      if res.code ~= 0 then vim.notify("second-brain: сервер не отвечает (hub: second-brain-mcp)", vim.log.levels.ERROR) return end
+      if res.code ~= 0 then vim.notify("cog-brain: сервер не отвечает (hub: cog-brain-mcp)", vim.log.levels.ERROR) return end
       local ok, parsed = pcall(vim.json.decode, res.stdout or "")
-      if not ok then vim.notify("second-brain: bad response", vim.log.levels.ERROR) return end
+      if not ok then vim.notify("cog-brain: bad response", vim.log.levels.ERROR) return end
       cb(parsed)
     end)
   end)
@@ -23,7 +23,7 @@ end
 
 local function search(query)
   api("/search", { query = query, k = 12 }, function(hits)
-    if #hits == 0 then vim.notify("second-brain: ничего не найдено", vim.log.levels.WARN) return end
+    if #hits == 0 then vim.notify("cog-brain: ничего не найдено", vim.log.levels.WARN) return end
     local items = {}
     for _, hit in ipairs(hits) do
       table.insert(items, string.format("%s :: %s [%s]", hit.file_path, hit.title or "", hit.heading_path or ""))
@@ -63,12 +63,12 @@ function M.setup(opts)
   opts = opts or {}
   vim.api.nvim_create_user_command("BrainSearch", function(o) search(o.args) end, { nargs = "+" })
   vim.api.nvim_create_user_command("BrainIndex", function()
-    vim.system({ "uv", "run", "second-brain-index" }, { cwd = vim.env.HOME .. "/CODES/h/second-brain" }, function(res)
+    vim.system({ "uv", "run", "cog-brain-index" }, { cwd = vim.env.HOME .. "/CODES/h/cog-brain" }, function(res)
       vim.schedule(function()
-        vim.notify("second-brain: " .. (res.code == 0 and (res.stdout:match("[^\n]*$") or "done") or "ошибка индексации"))
+        vim.notify("cog-brain: " .. (res.code == 0 and (res.stdout:match("[^\n]*$") or "done") or "ошибка индексации"))
       end)
     end)
-    vim.notify("second-brain: индексация запущена")
+    vim.notify("cog-brain: индексация запущена")
   end, {})
   vim.api.nvim_create_user_command("BrainToday", daily, {})
   vim.api.nvim_create_user_command("BrainGrep", function(o)
@@ -90,7 +90,7 @@ function M.setup(opts)
         vim.ui.input({ prompt = "Second Brain: " }, function(q)
           if not q or q == "" then return end
           api("/search", { query = q, k = 20 }, function(hits)
-            tel.quickfix({ title = "second-brain: " .. q, cwd = BRAIN,
+            tel.quickfix({ title = "cog-brain: " .. q, cwd = BRAIN,
               items = vim.tbl_map(function(h)
                 return { filename = BRAIN .. "/" .. h.file_path, text = (h.title or "") .. " [" .. (h.heading_path or "") .. "]" }
               end, hits) })

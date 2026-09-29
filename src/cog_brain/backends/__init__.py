@@ -17,8 +17,8 @@ register it in :data:`_BUILTIN`. Nothing else changes.
 """
 from __future__ import annotations
 
-from second_brain import config
-from second_brain.backends.base import Backend, Hit
+from cog_brain import config
+from cog_brain.backends.base import Backend, Hit
 
 _BUILTIN = ("sqlite", "qdrant", "markdown")
 
@@ -30,13 +30,13 @@ def available() -> list[str]:
 def get_backend(name: str | None = None) -> Backend:
     name = (name or config.BACKEND).strip().lower()
     if name == "sqlite":
-        from second_brain.backends.sqlite import SqliteBackend
+        from cog_brain.backends.sqlite import SqliteBackend
         return SqliteBackend()
     if name == "qdrant":
-        from second_brain.backends.qdrant import QdrantBackend
+        from cog_brain.backends.qdrant import QdrantBackend
         return QdrantBackend()
     if name == "markdown":
-        from second_brain.backends.markdown import MarkdownBackend
+        from cog_brain.backends.markdown import MarkdownBackend
         return MarkdownBackend()
     raise ValueError(f"unknown backend: {name!r} (available: {', '.join(_BUILTIN)})")
 

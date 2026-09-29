@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from second_brain import config
+from cog_brain import config
 
 EXCLUDE_DIRS = {".obsidian", ".trash", ".git", ".smart-env", "90-archive", "attachments", "daily"}
 MAX_FILE_BYTES = 1_000_000

@@ -44,5 +44,5 @@ class Backend(Protocol):
         ...
 
     def health(self) -> dict:
-        """Diagnostics for `second-brain doctor`."""
+        """Diagnostics for `cog-brain doctor`."""
         ...

@@ -4,7 +4,7 @@ One SQLite file holds both the FTS5 chunk index and the incremental manifest.
 No daemon, no docker, no embedding server: works on a bare machine and scales to
 large vaults. Ranking is BM25 (FTS5).
 
-Optional vector recall is an explicit extension point (``SECOND_BRAIN_SQLITE_VEC``)
+Optional vector recall is an explicit extension point (``COG_BRAIN_SQLITE_VEC``)
 to be layered on top of the same table; today BM25 is the whole story.
 """
 from __future__ import annotations
@@ -16,9 +16,9 @@ import sys
 import time
 from pathlib import Path
 
-from second_brain import chunking, config
-from second_brain.backends.base import Hit
-from second_brain.manifest import iso, staleness
+from cog_brain import chunking, config
+from cog_brain.backends.base import Hit
+from cog_brain.manifest import iso, staleness
 
 NAME = "sqlite"
 _TOKEN = re.compile(r"[0-9A-Za-zА-Яа-яЁё_]+")

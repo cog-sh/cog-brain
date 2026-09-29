@@ -1,6 +1,6 @@
 """Second-brain indexer CLI — drives the configured memory backend's ``sync``.
 
-The storage/retrieval engine is selected by ``SECOND_BRAIN_BACKEND`` (default
+The storage/retrieval engine is selected by ``COG_BRAIN_BACKEND`` (default
 ``sqlite``); this entry point only acquires the run lock and reports the diff.
 """
 from __future__ import annotations
@@ -9,8 +9,8 @@ import argparse
 import sys
 import time
 
-from second_brain import config
-from second_brain.backends import get_backend
+from cog_brain import config
+from cog_brain.backends import get_backend
 
 
 def run(full: bool = False) -> str:
@@ -36,10 +36,10 @@ def main() -> None:
     except BlockingIOError:
         print("another indexer is already running — exit")
         sys.exit(0)
-    ap = argparse.ArgumentParser(prog="second-brain-index")
+    ap = argparse.ArgumentParser(prog="cog-brain-index")
     ap.add_argument("--full", action="store_true", help="re-index every note")
     ap.add_argument("--watch", action="store_true", help="poll the vault every 3s")
-    ap.add_argument("--backend", default=None, help="override SECOND_BRAIN_BACKEND")
+    ap.add_argument("--backend", default=None, help="override COG_BRAIN_BACKEND")
     a = ap.parse_args()
     if a.backend:
         config.BACKEND = a.backend

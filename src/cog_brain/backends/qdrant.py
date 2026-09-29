@@ -14,9 +14,9 @@ import requests
 from fastembed import SparseTextEmbedding
 from qdrant_client import QdrantClient, models
 
-from second_brain import chunking, config
-from second_brain.backends.base import Hit
-from second_brain.manifest import Manifest, iso, staleness
+from cog_brain import chunking, config
+from cog_brain.backends.base import Hit
+from cog_brain.manifest import Manifest, iso, staleness
 
 NAME = "qdrant"
 DIMS = 1024

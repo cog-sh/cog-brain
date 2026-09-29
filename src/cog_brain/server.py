@@ -16,7 +16,7 @@ Write:
   index_now(full)   -> runs the incremental indexer (write/update call it automatically)
 
 Everything here resolves wiki-link targets by note STEM and TITLE, so `[[some-note]]` and a
-Russian `title` both work. The index lives in ``$SECOND_BRAIN_STATE_DIR/index.db`` + Qdrant;
+Russian `title` both work. The index lives in ``$COG_BRAIN_STATE_DIR/index.db`` + Qdrant;
 ``vault_status()`` is the authority on whether it is current — trust it before trusting a
 search result.
 
@@ -29,8 +29,8 @@ from datetime import date, datetime
 
 from mcp.server.fastmcp import FastMCP
 
-from second_brain import chunking, config
-from second_brain.backends import get_backend
+from cog_brain import chunking, config
+from cog_brain.backends import get_backend
 
 VAULT = config.VAULT
 
@@ -39,7 +39,7 @@ ATTACHMENT_RE = re.compile(r"\.(png|jpe?g|gif|svg|webp|avif|pdf|mp4|mov|webm|m4a
 FM_ORDER = ["title", "type", "status", "date", "updated", "tags", "moc", "aliases", "description",
             "retracted", "supersedes", "superseded_by"]
 
-mcp = FastMCP("second-brain")
+mcp = FastMCP("cog-brain")
 backend = get_backend()
 
 
@@ -213,7 +213,7 @@ def stale_count() -> int:
 
 def run_indexer(full: bool = False) -> str:
     # Same venv/package as this server, so no `uv` dependency resolution on every write.
-    cmd = [sys.executable, "-m", "second_brain.indexer"] + (["--full"] if full else [])
+    cmd = [sys.executable, "-m", "cog_brain.indexer"] + (["--full"] if full else [])
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800, check=False)
     except FileNotFoundError:
@@ -556,6 +556,13 @@ def serve_simple_http():
     HTTPServer(("127.0.0.1", 8766), H).serve_forever()
 
 def main() -> None:
+    # `cog-brain <op>` runs the operator CLI; a bare `cog-brain` (what MCP clients
+    # spawn) serves the MCP stdio server.
+    ops = {"status", "doctor", "backends", "reindex", "inspect"}
+    if any(tok in ops for tok in sys.argv[1:]):
+        from cog_brain import cli
+        cli.main()
+        return
     if "--simple-http" in sys.argv:
         serve_simple_http()
     elif "--http" in sys.argv:

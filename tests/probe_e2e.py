@@ -1,6 +1,6 @@
-"""End-to-end probe of the second-brain MCP server over the REAL stdio protocol.
+"""End-to-end probe of the cog-brain MCP server over the REAL stdio protocol.
 
-Spawns a fresh server (`python -m second_brain.server`), enumerates tools/list,
+Spawns a fresh server (`python -m cog_brain.server`), enumerates tools/list,
 exercises a representative tools/call set, then proves the frontmatter
 list-quoting fix on the wire: write -> update(superseded_by) -> on-disk quoting
 -> backlinks edge present -> broken_links has no phantom -> cleanup.
@@ -10,7 +10,7 @@ import asyncio, json, sys
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from second_brain import config
+from cog_brain import config
 
 VAULT = config.VAULT
 PROBE = "zz-mcp-probe.md"
@@ -27,11 +27,11 @@ def brief(s, n=100):
     return str(s).replace("\n", " ")[:n]
 
 async def main():
-    params = StdioServerParameters(command=sys.executable, args=["-m", "second_brain.server"])
+    params = StdioServerParameters(command=sys.executable, args=["-m", "cog_brain.server"])
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as s:
             init = await s.initialize()
-            check("initialize handshake", init.serverInfo.name == "second-brain", init.serverInfo.name)
+            check("initialize handshake", init.serverInfo.name == "cog-brain", init.serverInfo.name)
 
             listed = await s.list_tools()
             names = sorted(t.name for t in listed.tools)

@@ -1,10 +1,10 @@
 """Per-harness MCP wiring: one stdio server, many config dialects.
 
-``second-brain`` speaks standard MCP over stdio, so the *server* is already
+``cog-brain`` speaks standard MCP over stdio, so the *server* is already
 harness-neutral. The only per-harness part is **where** each client keeps its
 MCP config and **how** it spells a local (stdio) server. This module is that
-translation table plus a render/merge layer, so ``second-brain config`` can
-print a paste-ready snippet and ``second-brain install`` can merge it into the
+translation table plus a render/merge layer, so ``cog-brain config`` can
+print a paste-ready snippet and ``cog-brain install`` can merge it into the
 right file without hand-editing JSON/TOML.
 
 Adding a harness = one ``Harness`` row in :data:`HARNESSES` (+ a render branch
@@ -18,13 +18,13 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-NAME = "second-brain"
+NAME = "cog-brain"
 
-# Source for `uvx --from <source> second-brain`. Override per-invocation with
-# `--source`; override the default for everyone with SECOND_BRAIN_MCP_SOURCE.
+# Source for `uvx --from <source> cog-brain`. Override per-invocation with
+# `--source`; override the default for everyone with COG_BRAIN_MCP_SOURCE.
 # A git URL, a local path, or a PyPI project name all work.
 DEFAULT_SOURCE = os.environ.get(
-    "SECOND_BRAIN_MCP_SOURCE", "git+https://github.com/OWNER/second-brain"
+    "COG_BRAIN_MCP_SOURCE", "git+https://github.com/cog-sh/cog-brain"
 )
 
 # Formats: how a client spells a local server.
@@ -111,7 +111,7 @@ def resolve(name: str) -> Harness:
 # --------------------------------------------------------------------------- spec
 
 def launch_argv(source: str | None = None, extra_args: list[str] | None = None) -> list[str]:
-    """`uvx --from <source> second-brain [extra]` — clone-free."""
+    """`uvx --from <source> cog-brain [extra]` — clone-free."""
     return ["uvx", "--from", source or DEFAULT_SOURCE, NAME, *(extra_args or [])]
 
 
@@ -201,7 +201,7 @@ _ANY_HEADER = re.compile(r"^\[")
 
 
 def _strip_toml_block(text: str) -> str:
-    """Drop our [mcp_servers.second-brain*] tables, keep everything else."""
+    """Drop our [mcp_servers.cog-brain*] tables, keep everything else."""
     out, skipping = [], False
     for line in text.splitlines():
         if _HEADER.match(line):

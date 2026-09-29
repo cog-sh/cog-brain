@@ -1,7 +1,7 @@
 """Zero-infrastructure backend: lexical BM25 straight off the filesystem.
 
 No daemon, no index file, no embeddings — it tokenizes the vault on demand and
-ranks by BM25. Ships so the product works on a bare machine (`SECOND_BRAIN_BACKEND=markdown`)
+ranks by BM25. Ships so the product works on a bare machine (`COG_BRAIN_BACKEND=markdown`)
 and as the fallback when the vector stack is down. Quality is lexical, not
 semantic; use `qdrant` when you want embeddings.
 """
@@ -12,8 +12,8 @@ import re
 import time
 from collections import Counter
 
-from second_brain import chunking
-from second_brain.backends.base import Hit
+from cog_brain import chunking
+from cog_brain.backends.base import Hit
 
 NAME = "markdown"
 _TOKEN = re.compile(r"[0-9A-Za-zА-Яа-яЁё_]+")
