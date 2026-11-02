@@ -2,7 +2,7 @@
 
 **Your notes. Your agents. One memory.**
 
-Keep decisions, sources and next steps in Markdown. Let Codex, OMP and Pi bring
+Keep decisions, sources and next steps in Markdown. Let your coding agents bring
 that knowledge into your work, so the next session can pick up where you left off.
 
 cog-brain connects a personal knowledge base to your coding agents. You read and
@@ -38,40 +38,36 @@ engine runs locally without Docker or an embedding service.
 uv tool install git+https://github.com/cog-sh/cog-brain
 ```
 
-Set your vault location in `~/.config/cog-brain/config.toml`:
-
-```toml
-vault = "~/Notes"
-backend = "sqlite"
-```
-
-Replace `~/Notes` with your existing vault. If you skip this configuration,
-cog-brain looks for `~/SECOND_BRAIN`.
+Point it at your existing vault and build the local index:
 
 ```bash
+cog-brain setup --vault ~/Notes
 cog-brain doctor
-cog-brain reindex
 ```
+
+Setup saves the vault and backend to `~/.config/cog-brain/config.toml`, preserving
+other settings and backing up changes. SQLite is the default: no Docker, account
+or model download. Replace `~/Notes` with your folder of notes.
 
 ### 2. Connect your agent
 
-Run the command for the client you use:
+Choose your client (the [integration table](#choose-your-integration) lists all options):
 
 ```bash
 cog-brain install --harness codex --mode code
-# or
-cog-brain install --harness omp --mode code
-# or
-cog-brain install --harness pi --mode code
+# Other examples:
+cog-brain install --harness claude-code --mode code
+cog-brain install --harness opencode --mode code
 ```
 
-Restart the client. In Codex, open **`/hooks`** and approve the new cog-brain
-handlers to enable context loading before the model answers. Until then, a short
-instruction lets the agent retrieve context through the CLI on its own.
+Restart the client and enable its hooks if prompted. In Codex, open **`/hooks`**
+and approve the new cog-brain handlers. A managed instruction provides CLI recall
+while those hooks await review.
 
-Installation adds the skill and lifecycle integration, backs up changed files,
-and preserves unrelated settings. An existing cog-brain MCP entry is disabled;
-use `--keep-mcp` if you want both interfaces available.
+Installation adds a skill and the client's hooks, extension or instructions.
+It backs up changes, preserves unrelated settings and disables only the existing
+cog-brain MCP entry. Use `--keep-mcp` to retain it. Add `--scope project` to install
+in the current repository (required for VS Code).
 
 ### 3. Give your project a starting point
 
@@ -110,15 +106,27 @@ conventions shared by you and your agents.
 
 ## Choose your integration
 
-| Your setup | How to connect |
+| Client (`--harness`) | How memory reaches the agent |
 | --- | --- |
-| **Codex, OMP or Pi** | Local API and CLI, shared skill, automatic project context |
-| **Claude Code, Cursor, OpenCode or another MCP client** | The MCP adapter or a [client plugin](https://github.com/cog-sh/cog-brain-plugins) |
-| **Your own scripts** | Import `Brain` in Python or pass JSON to `cog-brain call` |
+| Codex (`codex`) | Session/prompt hooks; AGENTS fallback; hook approval required |
+| Oh My Pi (`omp`), Pi (`pi`) | Native extensions before work and after compaction |
+| Claude Code (`claude-code`) | SessionStart and UserPromptSubmit hooks; CLAUDE.md fallback |
+| Gemini CLI (`gemini-cli`) | SessionStart and BeforeAgent hooks; GEMINI.md fallback |
+| Cursor (`cursor`) | SessionStart hook; project rule for task-time recall |
+| OpenCode (`opencode`) | Native context hook; V2 default, `--opencode-version 1` for V1 |
+| Copilot CLI (`copilot`) | Instructions ask the agent to recall through its executor |
+| VS Code Copilot (`vscode`) | Repository instructions and skill; project scope only |
+| Windsurf (`windsurf`) | Global/project rules ask the agent to recall through its executor |
+| Other MCP clients | Optional [MCP adapter](docs/reference.md#mcp-clients) |
 
-For Codex, OMP and Pi, agents use their existing executor to work with cog-brain.
-There is no additional execution server to run. Hooks load a limited amount of
-local context; the agent can read more when the task needs it.
+All code integrations use the existing executor and local runtime. Hook-based
+clients can receive a bounded project packet before answering; instruction-based
+clients depend on the agent following the recall rule. Cursor's startup hook
+loads context once per session; its prompt-validation hook cannot inject context.
+Client permissions and hook support still apply.
+
+For marketplace installation and `/brain-*` commands, see
+[cog-brain-plugins](https://github.com/cog-sh/cog-brain-plugins).
 
 **Code Mode** means an agent can search, read several notes and filter the results
 inside one program. Only what the program returns needs to enter the model's
@@ -174,12 +182,31 @@ configured engine, so it doesn't wait for the vector services to start.
 After editing notes outside cog-brain, run `cog-brain reindex`. During a longer
 editing session, `cog-brain-index --watch` keeps the index updated.
 
+### Want semantic search?
+
+```bash
+cog-brain setup --backend qdrant --vault ~/Notes --dry-run
+cog-brain setup --backend qdrant --vault ~/Notes
+```
+
+Setup reuses healthy Qdrant/Ollama endpoints. If either service is missing locally,
+it needs a running [Docker installation](https://docs.docker.com/get-started/get-docker/)
+and starts only that service. It downloads the embedding model when needed,
+checks its 1024-dimensional output and collection compatibility, then saves the
+backend and indexes your vault. The first run needs internet, disk space and time.
+
+Managed services bind to `127.0.0.1`, restart with Docker and keep data in named
+volumes. Setup never deletes a container, volume or collection. You can return to
+service-free search with `cog-brain setup --backend sqlite`; vector data stays in
+place. See [bootstrap details](docs/reference.md#service-setup).
+
 ## Project status
 
 cog-brain is an **early release**. Local API, note safety and integration behavior
 have [isolated regression coverage](tests/test_local_api.py). Autonomous CLI recall
-has also been checked in a live Codex session. OMP and Pi adapters have been
-exercised in isolation; complete live workflows still need broader validation.
+has also been checked in a live Codex session. Additional client adapters and
+service bootstrap have isolated regression coverage; complete live LLM workflows
+across every client and fresh Docker downloads are not yet validated.
 
 Automatic recall requires a bound project card and an enabled client integration.
 The agent saves decisions and handoffs through the API; hooks do not archive

@@ -1,6 +1,6 @@
 """cog-brain — MCP server + incremental indexer for the SECOND_BRAIN Obsidian vault."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def __getattr__(name):

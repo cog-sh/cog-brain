@@ -48,6 +48,9 @@ cannot import cog_brain.
 For a daily/weekly review, explicitly list `brain.list_notes(folder="daily")`
 and read selected paths. Raw captures remain excluded from ordinary retrieval.
 
+If the local runtime is unavailable and only MCP tools are connected, read
+[mcp.md](mcp.md) for the compatibility mapping and its capture/handoff limits.
+
 Before saving durable knowledge, search for an existing note. Update it when the
 claim is the same; keep distinct decisions separate. Preserve withdrawn claims
 with `retracted` and `superseded_by`, the successor with `supersedes`, and a reason.

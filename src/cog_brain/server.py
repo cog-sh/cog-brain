@@ -61,7 +61,7 @@ def main() -> None:
     # `cog-brain <op>` runs the operator CLI; a bare `cog-brain` (what MCP clients
     # spawn) serves the MCP stdio server.
     ops = {"status", "config", "doctor", "backends", "reindex", "health", "lint", "graph",
-           "inspect", "ingest", "mcp-config", "install", "call", "context", "hook"}
+           "inspect", "ingest", "mcp-config", "install", "call", "context", "hook", "setup"}
     if any(tok in ops for tok in sys.argv[1:]):
         from cog_brain import cli
         cli.main()

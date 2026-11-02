@@ -102,7 +102,8 @@ def _mcp_config(args) -> int:
 def _install(args) -> int:
     if args.mode == "code":
         from cog_brain.integration import install_code
-        print(json.dumps({"installed": install_code(args.harness, scope=args.scope, keep_mcp=args.keep_mcp),
+        print(json.dumps({"installed": install_code(args.harness, scope=args.scope, keep_mcp=args.keep_mcp,
+                                                   opencode_version=args.opencode_version),
                           "note": "Restart the client; review Codex hooks using /hooks if requested."},
                          ensure_ascii=False, indent=1))
         return 0
@@ -204,6 +205,19 @@ def _hook(args) -> int:
     return 0
 
 
+def _setup(args) -> int:
+    from cog_brain.bootstrap import setup
+    try:
+        result = setup(backend=args.setup_backend, vault=args.vault,
+                       dry_run=args.dry_run, no_index=args.no_index)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 1 if isinstance(result.get("index"), dict) and not result["index"]["ok"] else 0
+    except Exception as error:
+        print(json.dumps({"error": str(error), "hint": "Default SQLite setup needs no Docker or Ollama."},
+                         ensure_ascii=False), file=sys.stderr)
+        return 1
+
+
 def main() -> None:
     try:  # let `cog-brain ... | head` terminate without a traceback
         import signal
@@ -211,6 +225,8 @@ def main() -> None:
     except (ImportError, AttributeError, ValueError):
         pass
     ap = argparse.ArgumentParser(prog="cog-brain", description="cog-brain operator CLI")
+    from cog_brain import __version__
+    ap.add_argument("--version", action="version", version=__version__)
     ap.add_argument("--backend", default=None, help="override COG_BRAIN_BACKEND")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -224,7 +240,13 @@ def main() -> None:
     context.add_argument("--budget", type=int, default=6000, help="maximum serialized characters")
     context.add_argument("--lexical", action="store_true", help="local retrieval without network services")
     hook = sub.add_parser("hook", help="read a lifecycle event JSON on stdin and emit context")
-    hook.add_argument("--harness", choices=["codex", "omp", "pi"], required=True)
+    hook.add_argument("--harness", choices=["codex", "omp", "pi", "claude-code", "gemini-cli", "cursor", "opencode"], required=True)
+
+    setup = sub.add_parser("setup", help="configure the vault and bootstrap optional Qdrant/Ollama services")
+    setup.add_argument("--backend", dest="setup_backend", choices=["sqlite", "markdown", "qdrant"], default="sqlite")
+    setup.add_argument("--vault", help="existing Markdown vault")
+    setup.add_argument("--dry-run", action="store_true", help="show a plan without writing or starting services")
+    setup.add_argument("--no-index", action="store_true", help="prepare services/configuration without indexing notes")
 
     sub.add_parser("status", help="index health (notes on disk vs indexed, staleness)")
     sub.add_parser("config", help="show resolved settings and where each comes from")
@@ -268,6 +290,7 @@ def main() -> None:
     ins.add_argument("--scope", choices=["global", "project"], default="global")
     ins.add_argument("--mode", choices=["mcp", "code"], default="mcp")
     ins.add_argument("--keep-mcp", action="store_true", help="keep existing MCP entry enabled in code mode")
+    ins.add_argument("--opencode-version", type=int, choices=[1, 2], default=2, help="OpenCode plugin API version (code mode)")
     ins.add_argument("--source")
     ins.add_argument("--env", action="append", default=[], help="K=V, repeatable")
 
@@ -282,7 +305,7 @@ def main() -> None:
         rc = {"status": _status, "doctor": _doctor, "backends": _backends,
               "config": _config, "reindex": _reindex, "health": _health, "lint": _lint,
               "graph": _graph, "mcp-config": _mcp_config, "install": _install,
-              "call": _call, "context": _context, "hook": _hook}[a.cmd](a)
+              "call": _call, "context": _context, "hook": _hook, "setup": _setup}[a.cmd](a)
     sys.exit(rc)
 
 

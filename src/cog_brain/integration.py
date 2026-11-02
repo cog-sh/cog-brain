@@ -15,7 +15,10 @@ from cog_brain import config, storage
 
 def hook_context(event: dict, *, harness: str) -> str:
     from cog_brain import Brain
-    cwd = str(event.get("cwd") or Path.cwd())
+    roots = event.get("workspace_roots") or []
+    if not event.get("cwd") and len(roots) > 1:
+        raise ValueError("multiple workspace roots; choose an explicit project")
+    cwd = str(event.get("cwd") or (roots[0] if len(roots) == 1 else Path.cwd()))
     query = str(event.get("prompt") or "")[:4000]
     packet = Brain().context(cwd=cwd, query=query, budget=6000, lexical=True)
     # Only the fixed wrapper is instruction. Vault text is untrusted evidence.
@@ -52,10 +55,14 @@ def run_hook(harness: str) -> None:
         text = hook_context(event, harness=harness)
     except Exception as error:
         text = f"cog-brain context unavailable ({type(error).__name__}); memory was not loaded."
-    if harness == "codex":
+    if harness in ("codex", "claude-code", "gemini-cli"):
         name = event.get("hook_event_name", "UserPromptSubmit")
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": name,
-                                                "additionalContext": text}}, ensure_ascii=False))
+        fields = {"additionalContext": text}
+        if harness != "gemini-cli":
+            fields["hookEventName"] = name
+        print(json.dumps({"hookSpecificOutput": fields}, ensure_ascii=False))
+    elif harness == "cursor":
+        print(json.dumps({"additional_context": text}, ensure_ascii=False))
     else:
         print(text)
 
@@ -71,14 +78,23 @@ def _write(path: Path, text: str) -> None:
 
 
 def install_code(harness: str, *, scope: str = "global", home: Path | None = None,
-                 cwd: Path | None = None, keep_mcp: bool = False) -> list[str]:
+                 cwd: Path | None = None, keep_mcp: bool = False,
+                 opencode_version: int = 2) -> list[str]:
+    from cog_brain.harnesses import ALIASES
+    harness = ALIASES.get(harness, harness)
+    if scope not in ("global", "project"):
+        raise ValueError("scope must be global or project")
+    from cog_brain.clients import EXTRA_CLIENTS, install
+    if harness in EXTRA_CLIENTS:
+        return install(harness, scope=scope, home=home or Path.home(), cwd=cwd or Path.cwd(),
+                       keep_mcp=keep_mcp, opencode_version=opencode_version)
     if harness not in ("codex", "omp", "pi"):
-        raise ValueError("code integration supports codex, omp and pi")
+        raise ValueError("unknown code integration: " + harness)
     home, cwd = home or Path.home(), cwd or Path.cwd()
     assets = Path(__file__).parent / "assets"
     skill = (home / ".agents/skills" if scope == "global" else cwd / ".agents/skills") / "cog-brain"
     written = []
-    for name in ("SKILL.md", "notes.md"):
+    for name in ("SKILL.md", "notes.md", "mcp.md"):
         target = skill / name
         _write(target, (assets / name).read_text())
         written.append(str(target))

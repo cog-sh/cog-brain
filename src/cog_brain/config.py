@@ -101,3 +101,30 @@ def describe() -> dict:
         },
         "sources": _SOURCES,
     }
+
+
+def write_settings(values: dict[str, str]) -> Path:
+    """Update known settings without losing comments or unrelated TOML tables."""
+    import tomlkit
+    from cog_brain import storage
+    from datetime import datetime
+
+    unknown = values.keys() - _KEYS.keys()
+    if unknown:
+        raise ValueError(f"unknown settings: {sorted(unknown)}")
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with storage.note_lock(CONFIG_PATH):
+        exists = CONFIG_PATH.exists()
+        raw = CONFIG_PATH.read_text() if exists else ""
+        document = tomlkit.parse(raw)
+        for key, value in values.items():
+            document[key] = value
+        updated = tomlkit.dumps(document)
+        if updated == raw:
+            return CONFIG_PATH
+        if exists:
+            stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+            storage.atomic_write(CONFIG_PATH.with_name(CONFIG_PATH.name + f".bak-cogbrain-{stamp}"), raw, create=True)
+        storage.atomic_write(CONFIG_PATH, updated, expected=storage.revision(raw) if exists else None,
+                             create=not exists)
+    return CONFIG_PATH

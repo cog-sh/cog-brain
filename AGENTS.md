@@ -23,6 +23,8 @@ src/cog_brain/
   operations.py shared note operations and validation, lazy backend
   api.py        Brain: Python API, scoped context, capture and handoff
   integration.py lifecycle recall and code-mode installation
+  clients.py     additional native client adapters and instruction fallbacks
+  bootstrap.py   opt-in service setup, readiness and configuration handover
   assets/       shared skill, note formats, native lifecycle extension
   server.py     MCP compatibility adapter (stdio / --http / --simple-http)
   cli.py        operator commands
@@ -41,6 +43,7 @@ uv run python tests/test_local_api.py   # isolated regression + real MCP + nativ
 uv run python tests/test_server.py      # every tool against the live vault
 uv run python tests/probe_e2e.py        # real MCP protocol over stdio
 uv run python tests/test_harnesses.py   # config emitter dialects
+uv run python tests/test_setup_clients.py # isolated bootstrap and native contracts
 uv run python tests/test_graph_ingest.py
 uv run cog-brain lint && uv run cog-brain health
 ```

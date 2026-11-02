@@ -1,7 +1,7 @@
 [project]
 name = "cog-brain"
-version = "0.1.0"
-description = "cog-brain: agent-agnostic second brain over an Obsidian vault — MCP server with pluggable memory backends (sqlite default, qdrant, markdown)."
+version = "0.2.0"
+description = "cog-brain: shared Markdown memory for people and coding agents, with local code execution, lifecycle recall and optional MCP."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -10,6 +10,7 @@ dependencies = [
     "fastembed>=0.7",
     "mcp>=1,<2",
     "ruamel-yaml>=0.18,<0.20",
+    "tomlkit>=0.13,<1",
 ]
 
 [project.scripts]

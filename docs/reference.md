@@ -14,8 +14,8 @@ backend = "qdrant"
 vault   = "~/SECOND_BRAIN"
 ```
 
-`cog-brain config` prints the resolved values and where each came from. A missing or
-malformed file is ignored, never fatal. Point elsewhere with `COG_BRAIN_CONFIG`.
+`cog-brain config` prints the resolved values and where each came from. Ordinary reads ignore a missing or
+malformed file; setup refuses malformed TOML before making changes. Point elsewhere with `COG_BRAIN_CONFIG`.
 
 | variable | meaning | default |
 | --- | --- | --- |
@@ -28,6 +28,40 @@ malformed file is ignored, never fatal. Point elsewhere with `COG_BRAIN_CONFIG`.
 | `COG_BRAIN_OLLAMA` | embedding endpoint (`qdrant` only) | `http://127.0.0.1:11434/api/embed` |
 | `COG_BRAIN_EMBED_MODEL` | embedding model (`qdrant` only) | `qwen3-embedding:0.6b` |
 | `COG_BRAIN_COLLECTION` | Qdrant collection (`qdrant` only) | `cog_brain` |
+
+## Service setup
+
+```bash
+cog-brain setup --vault ~/Notes                         # SQLite, then index
+cog-brain setup --backend markdown --vault ~/Notes       # no persistent index
+cog-brain setup --backend qdrant --vault ~/Notes --dry-run
+cog-brain setup --backend qdrant --vault ~/Notes
+```
+
+The vault must already exist. `--no-index` saves a ready configuration without
+indexing. `--dry-run` prints potential commands without network calls, writes or
+Docker checks; it does not know which services are already healthy.
+
+Qdrant setup probes the configured Qdrant and Ollama endpoints and reuses healthy
+services, including remote ones. Missing services can be bootstrapped only at
+loopback HTTP endpoints, with a running Docker daemon. It uses pinned images
+`qdrant/qdrant:v1.20.0` and `ollama/ollama:0.40.13`, containers
+`cog-brain-qdrant` / `cog-brain-ollama`, and named volumes
+`cog-brain-qdrant-data` / `cog-brain-ollama-data`. Ports bind to `127.0.0.1`.
+It refuses a conflicting container name or managed port rather than replacing it.
+An owned stopped container is restarted; a healthy existing service is untouched.
+
+The embedding model is pulled through Ollama only if absent. Setup checks a
+1024-dimensional numeric embedding and the existing collection's dense/BM25
+layout before saving settings. Malformed TOML or failed readiness/model checks
+leave the saved configuration unchanged. Downloaded images/models and containers
+may remain after a failed attempt; retry reuses them. No automatic deletion or
+rollback of service data occurs. Indexing failures are reported with a nonzero
+exit status after the valid configuration has been saved.
+
+`COG_BRAIN_*` environment overrides still take precedence over saved settings;
+setup reports overrides. Configure remote endpoints and credentials yourself.
+Use `cog-brain setup --backend sqlite` to switch back without removing vector data.
 
 ## Local API and CLI
 
@@ -59,10 +93,17 @@ editors is not guaranteed.
 cog-brain install --harness codex --mode code
 cog-brain install --harness omp --mode code
 cog-brain install --harness pi --mode code
+cog-brain install --harness claude-code --mode code
+cog-brain install --harness gemini-cli --mode code
+cog-brain install --harness cursor --mode code
+cog-brain install --harness opencode --mode code
+cog-brain install --harness copilot --mode code
+cog-brain install --harness windsurf --mode code
+cog-brain install --harness vscode --mode code --scope project
 ```
 
-Choose the client you use. Code-mode installation creates a shared skill and
-lifecycle integration. Changed files receive timestamped `.bak-cogbrain-*`
+Choose the client you use. Code-mode installation creates a skill and
+native lifecycle integration or managed recall instructions. Changed files receive timestamped `.bak-cogbrain-*`
 backups; unrelated hooks and instructions are preserved. The existing cog-brain
 MCP entry is disabled by default. Pass `--keep-mcp` to keep it enabled, or
 `--scope project` for installation in the current repository.
@@ -72,6 +113,17 @@ Restart the client after installing. Codex requires trusting new hooks through
 an autonomous CLI fallback while the hooks await review. Codex 0.166 restores
 context through `SessionStart(compact)`; its `PostCompact` event cannot emit
 additional context. OMP and Pi use native extensions.
+
+Claude Code and Gemini CLI receive startup and task hooks. Cursor receives a
+startup hook (not prompt injection); project installs also add an always-on rule.
+Copilot CLI, VS Code and Windsurf use instructions, so recall requires the agent's
+executor and instruction following. VS Code requires `--scope project`.
+
+OpenCode defaults to its V2 directory plugin (`plugins/cog-brain/index.js` with a
+V1 compatibility factory). Use `--opencode-version 1` for the V1 file layout.
+Avoid keeping both installed layouts enabled. The plugin suppresses only its own
+MCP server at runtime unless `--keep-mcp` is supplied. Restart after installation;
+`opencode plugin list` checks loading; `debug config` alone does not.
 
 For a fresh project, ask the connected agent to create a project card bound to
 this repository and linked to an existing note. A Python equivalent is:
@@ -170,6 +222,7 @@ See [AGENTS.md](../AGENTS.md) for repository structure and checks. From a checko
 ```bash
 uv sync
 uv run python tests/test_local_api.py
+uv run python tests/test_setup_clients.py
 uv run python tests/test_harnesses.py
 uv run python tests/test_graph_ingest.py
 uv run python tests/test_config.py
