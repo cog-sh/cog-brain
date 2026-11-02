@@ -1,240 +1,195 @@
-<div align="center">
+# cog-brain
 
-# 🧠 cog-brain
+**Your notes. Your agents. One memory.**
 
-**Your Markdown vault, recalled automatically and usable from code.**
+Keep decisions, sources and next steps in Markdown. Let Codex, OMP and Pi bring
+that knowledge into your work, so the next session can pick up where you left off.
 
-Local Python API. Automatic project context. Optional MCP. Plain Markdown you own.
+cog-brain connects a personal knowledge base to your coding agents. You read and
+edit the notes in Obsidian or your editor; agents search them, save useful findings
+and maintain a short handoff for each project.
 
-![backends](https://img.shields.io/badge/backends-sqlite%20·%20qdrant%20·%20markdown-6f42c1)
-![python](https://img.shields.io/badge/python-3.12%2B-3776AB)
-![mcp](https://img.shields.io/badge/MCP-stdio-8A2BE2)
-![license](https://img.shields.io/badge/license-MIT-green)
+[Get started](#get-started) · [Daily workflow](#a-day-with-cog-brain) ·
+[Integrations](#choose-your-integration) · [Reference](docs/reference.md)
 
-</div>
+## What it helps with
 
----
+- **Continue a project.** Bring its goal, constraints and next action into a new
+  session, including when you switch agents.
+- **Remember the reason.** Keep the decision, the evidence and the conditions
+  under which it applies, alongside links to the original sources.
+- **Capture without organizing first.** Save an idea or a link in today's daily
+  note. Turn it into lasting knowledge when it proves useful.
+- **Keep corrections visible.** Withdrawn claims remain searchable with a warning
+  and a link to their replacement.
 
-cog-brain turns a folder of Markdown notes into a **second brain your agent can
-search, read, extend and maintain**. Codex, OMP and Pi can recall project context
-automatically and compose operations through a local Python API. MCP remains
-available for Claude Code, Cursor, opencode, VS Code and other MCP clients.
+The working loop is small: recall context, do the work, save what you verified,
+leave a useful next step.
 
-The vault is the source of truth — plain, human-editable Markdown. The index is
-derived and rebuildable. The **storage engine is swappable** without changing a
-single tool. That combination is the point: Markdown-first tools usually have weak
-retrieval; vector tools usually aren't human-editable.
+## Get started
 
-> `cog-brain` is the product. `~/SECOND_BRAIN` is just the default vault it points at.
+You'll need **macOS or Linux, Python 3.12+, [uv](https://docs.astral.sh/uv/), and an
+existing folder of Markdown notes**. Obsidian is optional. The default search
+engine runs locally without Docker or an embedding service.
 
-## How it works
-
-```mermaid
-flowchart LR
-  V["📝 Obsidian vault<br/><i>plain Markdown — source of truth</i>"]
-  subgraph B["memory backends · pick one"]
-    direction TB
-    S["sqlite · default<br/>FTS5, zero services"]
-    Q["qdrant<br/>dense + BM25, RRF"]
-    M["markdown<br/>in-process BM25, no index"]
-  end
-  C["🧠 cog-brain<br/>MCP server"]
-  H["harnesses<br/>omp · Claude Code · Cursor<br/>Codex · opencode · VS Code"]
-  V -->|sync| B --> C --> H
-  H -.->|write_note · update_note| V
-```
-
-Writes re-index automatically. Retracted notes stay searchable and are flagged.
-The same tool surface works on every backend.
-
-## Install
-
-### Code Mode and automatic recall: Codex, OMP, Pi
-
-From this checkout:
+### 1. Install and point it at your notes
 
 ```bash
-uv tool install --editable .
+uv tool install git+https://github.com/cog-sh/cog-brain
+```
+
+Set your vault location in `~/.config/cog-brain/config.toml`:
+
+```toml
+vault = "~/Notes"
+backend = "sqlite"
+```
+
+Replace `~/Notes` with your existing vault. If you skip this configuration,
+cog-brain looks for `~/SECOND_BRAIN`.
+
+```bash
+cog-brain doctor
+cog-brain reindex
+```
+
+### 2. Connect your agent
+
+Run the command for the client you use:
+
+```bash
 cog-brain install --harness codex --mode code
+# or
 cog-brain install --harness omp --mode code
+# or
 cog-brain install --harness pi --mode code
 ```
 
-Choose the clients you use. Installation adds a shared skill and a read-only
-lifecycle hook/extension. Existing files receive timestamped backups; unrelated
-hooks are preserved. The client's existing cog-brain MCP entry is disabled to
-avoid exposing both interfaces (`--keep-mcp` keeps it enabled). Restart the client;
-Codex may require reviewing the new handlers in `/hooks`. No trust bypass is used.
-Until hooks are approved, a short managed instruction in Codex AGENTS asks the
-agent to obtain project context through the CLI before substantive work. Existing
-instructions are preserved.
+Restart the client. In Codex, open **`/hooks`** and approve the new cog-brain
+handlers to enable context loading before the model answers. Until then, a short
+instruction lets the agent retrieve context through the CLI on its own.
 
-Bind a project card once. `file_path` is a new root filename; its body links to an
-existing vault note. Use the Python environment containing cog-brain, or the JSON
-CLI (`cog-brain call project`, arguments on stdin):
+Installation adds the skill and lifecycle integration, backs up changed files,
+and preserves unrelated settings. An existing cog-brain MCP entry is disabled;
+use `--keep-mcp` if you want both interfaces available.
 
-```python
-from cog_brain import Brain
+### 3. Give your project a starting point
 
-brain = Brain()
-brain.project(
-    "my-project.md", "My project", cwd="/absolute/path/to/repo",
-    description="Current project state and next action.",
-    content="## Goal\nShip the project.\n\n## Next step\nRun the checks.\n\n[[existing-note]]",
-)
-```
+Open a repository in your agent and ask:
 
-For an existing card, update `repo` to the canonical checkout root and `project`
-to its stable identifier. Worktrees resolve through the common Git directory.
-No note is automatically created merely because a session starts in a directory.
+> Create a cog-brain project card for this repository. Link it to a relevant
+> existing note. Record the goal, current state, constraints and next step.
 
-### Compose operations from code
+That card binds the repository to its memory. Future tasks can retrieve the card
+and relevant notes automatically. If a project has no card, cog-brain reports
+that explicitly.
 
-```python
-from cog_brain import Brain
+Try it with an ordinary question:
 
-brain = Brain()
-result = brain.search("why this decision?", project="my-project", limit=4)
-notes = [brain.read(hit["file_path"], max_chars=1200) for hit in result["hits"][:2]]
-print({"notes": notes, "index": result["index"]})
-```
+> Where should we pick up on this project?
 
-Only the final output enters model context. This uses the host's normal executor
-and permissions; it is not a new sandbox or a provider-specific tool-calling API.
-There is no MCP dependency in API/CLI execution and no extra execution server.
+## A day with cog-brain
 
-```bash
-cog-brain context --cwd /path/to/repo --query 'current task' --lexical --budget 6000
-```
-
-Lifecycle recall uses local lexical retrieval so it does not wait for Qdrant or
-Ollama. It includes the project card, related evidence, warnings and citations.
-The budget caps serialized **characters**, not tokenizer-dependent tokens.
-Unbound projects are reported; project context is not silently taken from another
-repository. Malformed notes are skipped with explicit index warnings.
-
-`Brain.capture()` saves raw input in daily with idempotent event IDs.
-`Brain.handoff()` updates a project card's current state, verification, blocker and
-next step. Full-body `Brain.update()` requires the revision from `Brain.read()` as
-`expected_hash`; append is serialized across cog-brain processes. Atomic writes
-preserve YAML fields and comments. External editors do not share cog-brain's
-locks: edits observed before publication produce a conflict, but filesystem CAS
-against arbitrary editors is not guaranteed.
-
-See [note formats and the daily loop](src/cog_brain/assets/notes.md). Lifecycle
-hooks recall evidence; the agent saves verified decisions and handoffs through
-the API. They do not automatically summarize or save every conversation.
-
-### 🧩 As a plugin (recommended)
-
-```bash
-# oh-my-pi
-omp plugin marketplace add cog-sh/cog-brain-plugins
-omp plugin install cog-brain@cog-brain-plugins
-
-# Claude Code
-claude plugin marketplace add cog-sh/cog-brain-plugins
-claude plugin install cog-brain@cog-brain-plugins
-```
-
-The plugin registers the server, the skill, and the `/brain-*` commands. Nothing to clone.
-
-### 🔌 Plain MCP client
-
-```json
-{
-  "mcpServers": {
-    "cog-brain": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/cog-sh/cog-brain", "cog-brain"],
-      "env": { "COG_BRAIN_BACKEND": "sqlite" }
-    }
-  }
-}
-```
-
-Or let cog-brain write it for you:
-
-```bash
-cog-brain mcp-config --harness cursor        # paste-ready snippet
-cog-brain install --harness codex            # merge into ~/.codex/config.toml
-```
-
-### 🛠️ From source
-
-```bash
-git clone https://github.com/cog-sh/cog-brain && cd cog-brain
-uv sync
-uv run cog-brain-index        # build the index
-uv run cog-brain doctor       # check vault + backend
-```
-
-## Memory backends
-
-Pick the engine with `COG_BRAIN_BACKEND` (or `--backend`).
-
-| backend | storage | needs | ranking |
-| --- | --- | --- | --- |
-| **`sqlite`** *(default)* | one SQLite file | nothing | FTS5 BM25 |
-| `qdrant` | Qdrant collection | Qdrant + an embedding endpoint | dense + BM25, RRF |
-| `markdown` | none — the filesystem *is* the index | nothing | in-process BM25 |
-
-Adding one is a single module implementing the `Backend` protocol
-(`sync` · `search` · `status` · `reset` · `health`). See `src/cog_brain/backends/`.
-
-## Operator CLI
-
-```bash
-cog-brain status                 # index health: notes on disk vs indexed, staleness
-cog-brain config                 # resolved settings + where each value comes from
-cog-brain health                 # 4 metrics with verdicts (orphans, degree, connectivity, stale)
-cog-brain lint                   # broken links · orphans · stubs · missing frontmatter
-cog-brain doctor                 # diagnose vault, state dir, active backend
-cog-brain graph --export graphml # export the wiki-link graph (type as node attr)
-cog-brain inspect query "…" -k 10
-cog-brain ingest chats export.json
-cog-brain backends | reindex | mcp-config | install
-```
-
-## MCP tools
-
-- **read** — `semantic_search`, `outline`, `read_note`, `find_related`, `backlinks`,
-  `broken_links`, `graph_overview`, `list_notes`, `vault_status`
-- **write** — `write_note`, `update_note`
-- **index** — `index_now`
-
-## Configuration
-
-Settings resolve **env → `~/.config/cog-brain/config.toml` → default**, so a machine
-keeps them in one readable file instead of a shell profile:
-
-```toml
-# ~/.config/cog-brain/config.toml
-backend = "qdrant"
-vault   = "~/SECOND_BRAIN"
-```
-
-`cog-brain config` prints the resolved values and where each came from. A missing or
-malformed file is ignored, never fatal. Point elsewhere with `COG_BRAIN_CONFIG`.
-
-| variable | meaning | default |
+| When | What you do | What the agent keeps |
 | --- | --- | --- |
-| `COG_BRAIN_CONFIG` | config file path | `~/.config/cog-brain/config.toml` |
-| `COG_BRAIN_VAULT` | vault root | `~/SECOND_BRAIN` |
-| `COG_BRAIN_BACKEND` | `sqlite` · `qdrant` · `markdown` | `sqlite` |
-| `COG_BRAIN_STATE_DIR` | index + manifest location | `~/.local/state/cog-brain` |
-| `COG_BRAIN_SQLITE_DB` | sqlite path | `<state>/sqlite.db` |
-| `COG_BRAIN_QDRANT_URL` | Qdrant endpoint (`qdrant` only) | `http://127.0.0.1:6333` |
-| `COG_BRAIN_OLLAMA` | embedding endpoint (`qdrant` only) | `http://127.0.0.1:11434/api/embed` |
-| `COG_BRAIN_EMBED_MODEL` | embedding model (`qdrant` only) | `qwen3-embedding:0.6b` |
-| `COG_BRAIN_COLLECTION` | Qdrant collection (`qdrant` only) | `cog_brain` |
+| Start a session | Describe the task | The project card and relevant evidence in context |
+| Find something interesting | “Capture this link for later” | Raw material in `daily/`, with its source |
+| Settle a decision | “Save why we chose this” | A linked note with the reason, scope and verification |
+| Finish or switch projects | “Update the handoff” | Current state, checks, blockers and the next action |
 
-## Docs
+Once a week, review the captures worth developing and the projects still active.
+Daily notes stay out of ordinary knowledge retrieval, so an unprocessed thought
+doesn't become a confirmed fact just because it was saved.
 
-- [`docs/resources.md`](docs/resources.md) — a curated reading list (MCP, agent memory, GraphRAG, evals)
-- [`AGENTS.md`](AGENTS.md) — how an agent (or contributor) works *in this repo*
+You can keep using your existing vault. New knowledge notes use a short
+description and a link to an existing note; project cards stay brief enough to
+read at the start of a session.
 
-## Related
+See the [note formats and writing guide](src/cog_brain/assets/notes.md) for the
+conventions shared by you and your agents.
 
-- 🧩 **Plugins & skills** — <https://github.com/cog-sh/cog-brain-plugins>
+## Choose your integration
+
+| Your setup | How to connect |
+| --- | --- |
+| **Codex, OMP or Pi** | Local API and CLI, shared skill, automatic project context |
+| **Claude Code, Cursor, OpenCode or another MCP client** | The MCP adapter or a [client plugin](https://github.com/cog-sh/cog-brain-plugins) |
+| **Your own scripts** | Import `Brain` in Python or pass JSON to `cog-brain call` |
+
+For Codex, OMP and Pi, agents use their existing executor to work with cog-brain.
+There is no additional execution server to run. Hooks load a limited amount of
+local context; the agent can read more when the task needs it.
+
+**Code Mode** means an agent can search, read several notes and filter the results
+inside one program. Only what the program returns needs to enter the model's
+context. MCP remains available for clients that use it.
+
+For example, inside a Python environment with cog-brain installed:
+
+```python
+import json
+from cog_brain import Brain
+
+brain = Brain()
+found = brain.search("why did we choose this database?", project="my-project", limit=4)
+notes = [
+    brain.read(hit["file_path"], max_chars=1200)
+    for hit in found["hits"][:2]
+]
+print(json.dumps({"notes": notes, "warnings": found["warnings"]}, ensure_ascii=False))
+```
+
+Replace `my-project` with your project card's identifier. See the
+[API and integration reference](docs/reference.md) for setup details and commands.
+
+## Your knowledge stays readable
+
+The vault is the source of truth. Notes remain ordinary Markdown with YAML
+properties and `[[wiki-links]]`. The search index can be rebuilt from those files.
+
+cog-brain preserves existing YAML fields and comments when editing notes.
+Writes are atomic, concurrent appends are serialized, and replacing a note's
+body through the Python API requires the revision you read. Indexing failures
+are reported separately from a successful note save.
+
+You can edit in Obsidian or another editor. External editors do not participate
+in cog-brain's locks; detected conflicts require a fresh read. Malformed YAML is
+reported instead of silently rewritten.
+
+Files and indexes live locally by default. Retrieved notes become part of the
+context sent to your chosen agent's model provider. With vector search enabled,
+embedding requests go to the endpoint you configure.
+
+## Search that fits your setup
+
+| Engine | Best starting point for | What it needs |
+| --- | --- | --- |
+| **SQLite — default** | Local keyword search with a persistent index | No background services |
+| **Markdown** | Searching directly from the vault without a persistent index | No background services |
+| **Qdrant** | Hybrid semantic and keyword search | Qdrant and an embedding endpoint |
+
+Automatic lifecycle context uses local keyword search even when Qdrant is your
+configured engine, so it doesn't wait for the vector services to start.
+
+After editing notes outside cog-brain, run `cog-brain reindex`. During a longer
+editing session, `cog-brain-index --watch` keeps the index updated.
+
+## Project status
+
+cog-brain is an **early release**. Local API, note safety and integration behavior
+have [isolated regression coverage](tests/test_local_api.py). Autonomous CLI recall
+has also been checked in a live Codex session. OMP and Pi adapters have been
+exercised in isolation; complete live workflows still need broader validation.
+
+Automatic recall requires a bound project card and an enabled client integration.
+The agent saves decisions and handoffs through the API; hooks do not archive
+every conversation or turn every answer into a note.
+
+## Go further
+
+- [Configuration, integrations and troubleshooting](docs/reference.md)
+- [Note formats and daily workflow](src/cog_brain/assets/notes.md)
+- [Contributing and running checks](AGENTS.md)
+- [Background reading](docs/resources.md)
+
+[MIT licensed](LICENSE). Built by [cog-sh](https://github.com/cog-sh).
