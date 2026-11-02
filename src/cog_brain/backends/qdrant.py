@@ -16,7 +16,7 @@ from qdrant_client import QdrantClient, models
 
 from cog_brain import chunking, config
 from cog_brain.backends.base import Hit
-from cog_brain.manifest import Manifest, iso, staleness
+from cog_brain.manifest import Manifest, iso, staleness, file_hash
 
 NAME = "qdrant"
 DIMS = 1024
@@ -103,14 +103,17 @@ class QdrantBackend:
                 key="file_path", match=models.MatchValue(value=rel))])))
 
     def _index_file(self, p, rel: str, full: bool) -> bool:
+        raw_hash = file_hash(p)
         chunks = chunking.chunks_for(p, rel)
         texts = [c["embed_text"] for c in chunks]
         h = hashlib.sha256("\n\x00\n".join(texts).encode()).hexdigest()
         row = self._manifest.get(rel)
         if row and row == (h, chunking.CHUNKER_VERSION, config.EMBED_MODEL) and not full:
+            self._manifest.snapshot(rel, raw_hash)
             return False
-        self._delete_file(rel)
         dense, sp = self._embed_texts(texts), self._sparse(texts)
+        if len(dense) != len(chunks) or any(len(vector) != DIMS for vector in dense):
+            raise ValueError("embedding endpoint returned an unexpected count or dimension")
         points = [
             models.PointStruct(
                 id=self._point_id(rel, c["idx"]),
@@ -122,14 +125,21 @@ class QdrantBackend:
                          "content_hash": h})
             for i, c in enumerate(chunks)
         ]
-        self.client.upsert(config.COLLECTION, points=points)
+        self.client.upsert(config.COLLECTION, points=points, wait=True)
+        # Publish replacement points before deleting surplus chunks from the old version.
+        self.client.delete(config.COLLECTION, points_selector=models.FilterSelector(
+            filter=models.Filter(must=[models.FieldCondition(
+                key="file_path", match=models.MatchValue(value=rel))],
+                must_not=[models.HasIdCondition(has_id=[point.id for point in points])])), wait=True)
         self._manifest.set(rel, h, chunking.CHUNKER_VERSION, config.EMBED_MODEL)
+        self._manifest.snapshot(rel, raw_hash)
         return True
 
     def sync(self, notes=None, full: bool = False) -> dict:
         notes = list(notes if notes is not None else chunking.iter_notes())
         self.ensure()
         changed = deleted = 0
+        errors = {}
         t0 = time.time()
         current = set()
         for p, rel in notes:
@@ -138,6 +148,8 @@ class QdrantBackend:
                 if self._index_file(p, rel, full):
                     changed += 1
             except Exception as e:  # noqa: BLE001
+                errors[rel] = str(e)
+                self._manifest.fail(rel, str(e))
                 print(f"  !! {rel}: {e}", file=sys.stderr)
         for rel in self._manifest.rels():
             if rel not in current:
@@ -146,7 +158,7 @@ class QdrantBackend:
                 deleted += 1
         self._manifest.set_last_run(time.time())
         return {"changed": changed, "deleted": deleted, "total": self.count(),
-                "elapsed": round(time.time() - t0, 1)}
+                "elapsed": round(time.time() - t0, 1), "errors": errors}
 
     # ---------------------------------------------------------------- search
 
@@ -163,12 +175,14 @@ class QdrantBackend:
 
     def search(self, query: str, k: int, *, tag: str | None = None,
                folder: str | None = None, exclude: str | None = None) -> list[Hit]:
+        if not self.client.collection_exists(config.COLLECTION):
+            return []
         flt = self._filter(tag, folder, exclude)
         points = self.client.query_points(
             config.COLLECTION,
             prefetch=[
-                models.Prefetch(query=self._embed_query(query), using="dense", limit=20, filter=flt),
-                models.Prefetch(query=self._sparse_one(query), using="bm25", limit=20, filter=flt),
+                models.Prefetch(query=self._embed_query(query), using="dense", limit=max(20, k), filter=flt),
+                models.Prefetch(query=self._sparse_one(query), using="bm25", limit=max(20, k), filter=flt),
             ],
             query=models.FusionQuery(fusion=models.Fusion.RRF),
             limit=k,
@@ -182,12 +196,7 @@ class QdrantBackend:
         return self.client.count(config.COLLECTION, exact=True).count
 
     def status(self) -> dict:
-        indexed = self._manifest.rels()
-        last = self._manifest.last_run()
-        disk = [rel for _, rel in chunking.iter_notes()]
-        stale = staleness(disk, last)
-        return {"backend": NAME, "notes_on_disk": len(disk), "notes_indexed": len(indexed),
-                "last_run": iso(last), "stale_count": len(stale), "stale": stale[:50]}
+        return {"backend": NAME, **self._manifest.status()}
 
     def reset(self) -> None:
         if self.client.collection_exists(config.COLLECTION):

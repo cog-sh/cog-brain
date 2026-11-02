@@ -53,7 +53,10 @@ def link_index() -> dict[str, str]:
     for p, rel in chunking.iter_notes():
         idx.setdefault(p.stem.lower(), rel)
         try:
-            title = chunking.parse_note(p)[1]
+            _, title, _, aliases, _ = chunking.parse_note(p)
+            for alias in aliases:
+                idx.setdefault(str(alias).lower(), rel)
+            idx.setdefault(rel.removesuffix(".md").lower(), rel)
         except Exception as e:  # noqa: BLE001
             print(f"link index: cannot parse {rel}: {e}", file=sys.stderr)
             continue
@@ -178,11 +181,17 @@ def lint() -> dict:
     g = graph()
     out, inbound, notes = g["out"], g["inbound"], g["notes"]
     broken, missing, stubs = [], [], []
+    parse_errors = []
+    idx = link_index()
     for rel, p in notes.items():
         raw = p.read_text(encoding="utf-8", errors="replace")
-        fm, _title, _tags, _aliases, body = chunking.parse_note(p)
+        try:
+            fm, _title, _tags, _aliases, body = chunking.parse_note(p)
+        except Exception as error:
+            parse_errors.append({"file_path": rel, "error": str(error)})
+            continue
         for tgt in raw_links(raw):
-            if tgt.lower() not in link_index():
+            if tgt.lower() not in idx:
                 broken.append({"file_path": rel, "link": tgt})
         miss = [k for k in ("title", "description") if not str(fm.get(k, "")).strip()]
         if miss and rel not in SYSTEM_PAGES:
@@ -200,8 +209,9 @@ def lint() -> dict:
         "orphans": orphans,
         "stubs": sorted(stubs),
         "missing_frontmatter": missing,
+        "parse_errors": parse_errors,
         "counts": {"broken": len(broken), "orphans": len(orphans), "stubs": len(stubs),
-                   "missing_frontmatter": len(missing)},
+                   "missing_frontmatter": len(missing), "parse_errors": len(parse_errors)},
     }
 
 
@@ -213,8 +223,13 @@ def edges() -> list[tuple[str, str]]:
 
 
 def _node_types() -> dict[str, str]:
-    return {rel: str(chunking.parse_note(p)[0].get("type", ""))
-            for rel, p in graph()["notes"].items()}
+    result = {}
+    for rel, p in graph()["notes"].items():
+        try:
+            result[rel] = str(chunking.parse_note(p)[0].get("type", ""))
+        except Exception:
+            result[rel] = ""
+    return result
 
 
 def export_csv() -> str:

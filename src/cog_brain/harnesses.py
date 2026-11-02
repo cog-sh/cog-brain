@@ -46,8 +46,13 @@ class Harness:
 HARNESSES: dict[str, Harness] = {
     "omp": Harness(
         "omp", FMT_MCPSERVERS,
-        "~/.omp/agent/mcp.json", None,
+        "~/.omp/agent/mcp.json", ".omp/mcp.json",
         "oh-my-pi — user-level MCP config",
+    ),
+    "pi": Harness(
+        "pi", FMT_MCPSERVERS,
+        "~/.pi/agent/mcp.json", ".pi/mcp.json",
+        "Pi — native MCP config",
     ),
     "claude-code": Harness(
         "claude-code", FMT_MCPSERVERS,
@@ -97,7 +102,7 @@ ALIASES = {
     "code": "vscode",
     "gemini": "gemini-cli",
     "oh-my-pi": "omp",
-    "pi": "omp",
+
 }
 
 

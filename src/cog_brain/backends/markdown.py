@@ -19,7 +19,7 @@ NAME = "markdown"
 _TOKEN = re.compile(r"[0-9A-Za-zА-Яа-яЁё_]+")
 _K1, _B = 1.5, 0.75
 _TTL = 2.0  # seconds; vault scan cache
-_CACHE: dict = {"at": 0.0, "chunks": [], "df": Counter(), "avg": 1.0, "n": 0}
+_CACHE: dict = {"at": 0.0, "chunks": [], "df": Counter(), "avg": 1.0, "n": 0, "errors": {}}
 
 
 def _tokens(text: str) -> list[str]:
@@ -31,15 +31,21 @@ def _load() -> dict:
     if _CACHE["n"] and now - _CACHE["at"] < _TTL:
         return _CACHE
     chunks: list[dict] = []
+    errors = {}
     for p, rel in chunking.iter_notes():
-        for c in chunking.chunks_for(p, rel):
+        try:
+            records = chunking.chunks_for(p, rel)
+        except Exception as error:
+            errors[rel] = str(error)
+            continue
+        for c in records:
             toks = _tokens(c["embed_text"])
             c["_tf"], c["_len"] = Counter(toks), len(toks)
             chunks.append(c)
     df: Counter = Counter()
     for c in chunks:
         df.update(c["_tf"].keys())
-    _CACHE.update(at=now, chunks=chunks, df=df, n=len(chunks),
+    _CACHE.update(at=now, chunks=chunks, df=df, n=len(chunks), errors=errors,
                   avg=(sum(c["_len"] for c in chunks) / len(chunks)) if chunks else 1.0)
     return _CACHE
 
@@ -102,8 +108,10 @@ class MarkdownBackend:
 
     def status(self) -> dict:
         disk = sum(1 for _ in chunking.iter_notes())
-        return {"backend": NAME, "notes_on_disk": disk, "notes_indexed": disk,
-                "last_run": None, "stale_count": 0, "stale": []}
+        errors = _load()["errors"]
+        return {"backend": NAME, "notes_on_disk": disk, "notes_indexed": disk - len(errors),
+                "last_run": None, "stale_count": len(errors), "stale": sorted(errors)[:50],
+                "failed": errors, "state": "degraded" if errors else "ready"}
 
     def reset(self) -> None:
         _CACHE.update(at=0.0, chunks=[], df=Counter(), n=0, avg=1.0)

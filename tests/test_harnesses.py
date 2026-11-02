@@ -36,7 +36,7 @@ for name in sorted(H.HARNESSES):
             check(f"{name} has command+args", entry.get("command") and entry.get("args"))
 
 check("alias claude -> claude-code", H.resolve("claude").name == "claude-code")
-check("alias pi -> omp", H.resolve("pi").name == "omp")
+check("pi is independent", H.resolve("pi").global_path == "~/.pi/agent/mcp.json")
 try:
     H.resolve("nope")
     check("unknown harness raises", False)

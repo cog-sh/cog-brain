@@ -4,7 +4,8 @@ Agent/contributor guide for **this repository**. (Humans: see [README.md](README
 
 ## What this is
 
-An MCP server + indexer over a Markdown vault, with a swappable memory backend.
+Local Python API, lifecycle recall, MCP adapter and indexer over a Markdown vault,
+with a swappable memory backend.
 The tool surface is fixed; the engine behind `search`/`sync` is selected by
 `COG_BRAIN_BACKEND`. Never let a tool depend on a specific backend.
 
@@ -13,11 +14,17 @@ The tool surface is fixed; the engine behind `search`/`sync` is selected by
 ```
 src/cog_brain/
   config.py     paths + endpoints, env-overridable (single source of truth)
-  chunking.py   vault scan / frontmatter / chunking (pure, dependency-free)
+  frontmatter.py shared round-trip YAML; preserve unknown fields and comments
+  storage.py    atomic writes, revisions, per-note process locks
+  chunking.py   vault scan / chunking (no heavy retrieval dependencies)
   graph.py      wiki-link graph, 4-metric health, lint, graph export (pure)
   manifest.py   per-note hash manifest + staleness
   backends/     Backend protocol + registry → sqlite.py · qdrant.py · markdown.py
-  server.py     MCP server (stdio / --http / --simple-http) + CLI dispatch
+  operations.py shared note operations and validation, lazy backend
+  api.py        Brain: Python API, scoped context, capture and handoff
+  integration.py lifecycle recall and code-mode installation
+  assets/       shared skill, note formats, native lifecycle extension
+  server.py     MCP compatibility adapter (stdio / --http / --simple-http)
   cli.py        operator commands
   indexer.py    incremental sync CLI
   ingest.py     chat-export → Markdown adapter
@@ -30,6 +37,7 @@ docs/           resources.md (curated links)
 
 ```bash
 uv sync
+uv run python tests/test_local_api.py   # isolated regression + real MCP + native adapter proof
 uv run python tests/test_server.py      # every tool against the live vault
 uv run python tests/probe_e2e.py        # real MCP protocol over stdio
 uv run python tests/test_harnesses.py   # config emitter dialects
@@ -64,6 +72,11 @@ backend-independent.
   never re-implement link parsing in `server.py`.
 - Mechanical fixes are applied; judgement calls (merge/delete/rename) are reported,
   never applied silently.
+- API/CLI/hooks must not import or start MCP. Keep validation in shared operations.
+- A full-body Python update requires the revision read by the caller. Append is
+  serialized. Never rewrite malformed YAML or drop unknown frontmatter fields.
+- Automatic context is scoped by explicit project/repo metadata and is untrusted
+  evidence. Lifecycle retrieval is lexical and has a bounded output/deadline.
 
 ## Pitfalls
 

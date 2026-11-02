@@ -2,9 +2,9 @@
 
 # 🧠 cog-brain
 
-**Your Obsidian vault, as long-term memory for any coding agent.**
+**Your Markdown vault, recalled automatically and usable from code.**
 
-One MCP server. Pluggable storage. Plain Markdown you own.
+Local Python API. Automatic project context. Optional MCP. Plain Markdown you own.
 
 ![backends](https://img.shields.io/badge/backends-sqlite%20·%20qdrant%20·%20markdown-6f42c1)
 ![python](https://img.shields.io/badge/python-3.12%2B-3776AB)
@@ -16,9 +16,9 @@ One MCP server. Pluggable storage. Plain Markdown you own.
 ---
 
 cog-brain turns a folder of Markdown notes into a **second brain your agent can
-search, read, extend and maintain** — through the standard Model Context Protocol,
-so it drops into omp, Claude Code, Cursor, Codex, opencode, VS Code and anything
-else that speaks MCP.
+search, read, extend and maintain**. Codex, OMP and Pi can recall project context
+automatically and compose operations through a local Python API. MCP remains
+available for Claude Code, Cursor, opencode, VS Code and other MCP clients.
 
 The vault is the source of truth — plain, human-editable Markdown. The index is
 derived and rebuildable. The **storage engine is swappable** without changing a
@@ -48,6 +48,82 @@ Writes re-index automatically. Retracted notes stay searchable and are flagged.
 The same tool surface works on every backend.
 
 ## Install
+
+### Code Mode and automatic recall: Codex, OMP, Pi
+
+From this checkout:
+
+```bash
+uv tool install --editable .
+cog-brain install --harness codex --mode code
+cog-brain install --harness omp --mode code
+cog-brain install --harness pi --mode code
+```
+
+Choose the clients you use. Installation adds a shared skill and a read-only
+lifecycle hook/extension. Existing files receive timestamped backups; unrelated
+hooks are preserved. The client's existing cog-brain MCP entry is disabled to
+avoid exposing both interfaces (`--keep-mcp` keeps it enabled). Restart the client;
+Codex may require reviewing the new handlers in `/hooks`. No trust bypass is used.
+Until hooks are approved, a short managed instruction in Codex AGENTS asks the
+agent to obtain project context through the CLI before substantive work. Existing
+instructions are preserved.
+
+Bind a project card once. `file_path` is a new root filename; its body links to an
+existing vault note. Use the Python environment containing cog-brain, or the JSON
+CLI (`cog-brain call project`, arguments on stdin):
+
+```python
+from cog_brain import Brain
+
+brain = Brain()
+brain.project(
+    "my-project.md", "My project", cwd="/absolute/path/to/repo",
+    description="Current project state and next action.",
+    content="## Goal\nShip the project.\n\n## Next step\nRun the checks.\n\n[[existing-note]]",
+)
+```
+
+For an existing card, update `repo` to the canonical checkout root and `project`
+to its stable identifier. Worktrees resolve through the common Git directory.
+No note is automatically created merely because a session starts in a directory.
+
+### Compose operations from code
+
+```python
+from cog_brain import Brain
+
+brain = Brain()
+result = brain.search("why this decision?", project="my-project", limit=4)
+notes = [brain.read(hit["file_path"], max_chars=1200) for hit in result["hits"][:2]]
+print({"notes": notes, "index": result["index"]})
+```
+
+Only the final output enters model context. This uses the host's normal executor
+and permissions; it is not a new sandbox or a provider-specific tool-calling API.
+There is no MCP dependency in API/CLI execution and no extra execution server.
+
+```bash
+cog-brain context --cwd /path/to/repo --query 'current task' --lexical --budget 6000
+```
+
+Lifecycle recall uses local lexical retrieval so it does not wait for Qdrant or
+Ollama. It includes the project card, related evidence, warnings and citations.
+The budget caps serialized **characters**, not tokenizer-dependent tokens.
+Unbound projects are reported; project context is not silently taken from another
+repository. Malformed notes are skipped with explicit index warnings.
+
+`Brain.capture()` saves raw input in daily with idempotent event IDs.
+`Brain.handoff()` updates a project card's current state, verification, blocker and
+next step. Full-body `Brain.update()` requires the revision from `Brain.read()` as
+`expected_hash`; append is serialized across cog-brain processes. Atomic writes
+preserve YAML fields and comments. External editors do not share cog-brain's
+locks: edits observed before publication produce a conflict, but filesystem CAS
+against arbitrary editors is not guaranteed.
+
+See [note formats and the daily loop](src/cog_brain/assets/notes.md). Lifecycle
+hooks recall evidence; the agent saves verified decisions and handoffs through
+the API. They do not automatically summarize or save every conversation.
 
 ### 🧩 As a plugin (recommended)
 

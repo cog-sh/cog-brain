@@ -9,10 +9,11 @@ dependencies = [
     "requests>=2.31",
     "fastembed>=0.7",
     "mcp>=1,<2",
+    "ruamel-yaml>=0.18,<0.20",
 ]
 
 [project.scripts]
-cog-brain = "cog_brain.server:main"
+cog-brain = "cog_brain.__main__:main"
 cog-brain-index = "cog_brain.indexer:main"
 
 [build-system]

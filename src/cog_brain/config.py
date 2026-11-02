@@ -76,7 +76,7 @@ def _get(key: str, default: str) -> str:
     return default
 
 
-VAULT = Path(_get("vault", "~/SECOND_BRAIN")).expanduser()
+VAULT = Path(_get("vault", "~/SECOND_BRAIN")).expanduser().resolve()
 STATE_DIR = Path(_get("state_dir", "~/.local/state/cog-brain")).expanduser()
 DB = STATE_DIR / "index.db"
 LOCK = STATE_DIR / ".index.lock"

@@ -56,7 +56,11 @@ def _reindex(args) -> int:
     from cog_brain import indexer
     if args.backend:
         config.BACKEND = args.backend
-    print(indexer.run(full=args.full))
+    try:
+        print(indexer.run(full=args.full))
+    except RuntimeError as error:
+        print(str(error), file=sys.stderr)
+        return 1
     return 0
 
 
@@ -96,6 +100,12 @@ def _mcp_config(args) -> int:
 
 
 def _install(args) -> int:
+    if args.mode == "code":
+        from cog_brain.integration import install_code
+        print(json.dumps({"installed": install_code(args.harness, scope=args.scope, keep_mcp=args.keep_mcp),
+                          "note": "Restart the client; review Codex hooks using /hooks if requested."},
+                         ensure_ascii=False, indent=1))
+        return 0
     from cog_brain import harnesses as H
     env = dict(kv.split("=", 1) for kv in args.env)
     spec = H.build_spec(source=args.source, env=env)
@@ -166,6 +176,34 @@ def _config(args) -> int:
     return 0
 
 
+def _call(args) -> int:
+    from cog_brain import Brain
+    try:
+        fields = json.load(sys.stdin)
+        if not isinstance(fields, dict):
+            raise ValueError("arguments must be a JSON object")
+        result = getattr(Brain(), args.operation)(**fields)
+        print(json.dumps(result, ensure_ascii=False, default=str))
+        return 0
+    except Exception as error:
+        print(json.dumps({"error": str(error)}, ensure_ascii=False))
+        return 1
+
+
+def _context(args) -> int:
+    from cog_brain import Brain
+    result = Brain().context(cwd=args.cwd, query=args.query, project=args.project,
+                             budget=args.budget, lexical=args.lexical)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def _hook(args) -> int:
+    from cog_brain.integration import run_hook
+    run_hook(args.harness)
+    return 0
+
+
 def main() -> None:
     try:  # let `cog-brain ... | head` terminate without a traceback
         import signal
@@ -175,6 +213,18 @@ def main() -> None:
     ap = argparse.ArgumentParser(prog="cog-brain", description="cog-brain operator CLI")
     ap.add_argument("--backend", default=None, help="override COG_BRAIN_BACKEND")
     sub = ap.add_subparsers(dest="cmd", required=True)
+
+    call = sub.add_parser("call", help="call local API with JSON arguments on stdin (no MCP)")
+    call.add_argument("operation", choices=["search", "read", "context", "create", "update", "capture", "project", "handoff",
+                                          "list_notes", "outline", "find_related", "backlinks"])
+    context = sub.add_parser("context", help="bounded project context for a task")
+    context.add_argument("--cwd", default=str(Path.cwd()))
+    context.add_argument("--query", default="")
+    context.add_argument("--project")
+    context.add_argument("--budget", type=int, default=6000, help="maximum serialized characters")
+    context.add_argument("--lexical", action="store_true", help="local retrieval without network services")
+    hook = sub.add_parser("hook", help="read a lifecycle event JSON on stdin and emit context")
+    hook.add_argument("--harness", choices=["codex", "omp", "pi"], required=True)
 
     sub.add_parser("status", help="index health (notes on disk vs indexed, staleness)")
     sub.add_parser("config", help="show resolved settings and where each comes from")
@@ -216,6 +266,8 @@ def main() -> None:
     ins = sub.add_parser("install", help="write the MCP entry into a harness config")
     ins.add_argument("--harness", required=True)
     ins.add_argument("--scope", choices=["global", "project"], default="global")
+    ins.add_argument("--mode", choices=["mcp", "code"], default="mcp")
+    ins.add_argument("--keep-mcp", action="store_true", help="keep existing MCP entry enabled in code mode")
     ins.add_argument("--source")
     ins.add_argument("--env", action="append", default=[], help="K=V, repeatable")
 
@@ -229,7 +281,8 @@ def main() -> None:
     else:
         rc = {"status": _status, "doctor": _doctor, "backends": _backends,
               "config": _config, "reindex": _reindex, "health": _health, "lint": _lint,
-              "graph": _graph, "mcp-config": _mcp_config, "install": _install}[a.cmd](a)
+              "graph": _graph, "mcp-config": _mcp_config, "install": _install,
+              "call": _call, "context": _context, "hook": _hook}[a.cmd](a)
     sys.exit(rc)
 
 

@@ -9,12 +9,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from cog_brain import config
+from cog_brain import config, frontmatter
 
 EXCLUDE_DIRS = {".obsidian", ".trash", ".git", ".smart-env", "90-archive", "attachments", "daily"}
 MAX_FILE_BYTES = 1_000_000
 TAU_MAX = 1500  # chars, soft max per chunk
-CHUNKER_VERSION = "1"  # bump to force re-chunk of every file
+CHUNKER_VERSION = "2"  # bump to force re-chunk of every file
 
 
 def clean_wikilinks(text: str) -> str:
@@ -81,11 +81,14 @@ def contextualize(title: str, tags: list[str], aliases: list[str], heading_path:
     return "\n".join(parts)
 
 
-def iter_notes():
+def iter_notes(*, include_daily: bool = False):
     """Yield (path, vault-relative posix path) for every indexable note."""
     for p in config.VAULT.rglob("*.md"):
         rel = p.relative_to(config.VAULT).as_posix()
-        if any(rel.startswith(e.rstrip("/")) for e in EXCLUDE_DIRS):
+        excluded = EXCLUDE_DIRS - {"daily"} if include_daily else EXCLUDE_DIRS
+        if any(part in excluded for part in p.relative_to(config.VAULT).parts[:-1]):
+            continue
+        if not p.resolve().is_relative_to(config.VAULT.resolve()):
             continue
         if p.stat().st_size > MAX_FILE_BYTES:
             continue
@@ -94,20 +97,9 @@ def iter_notes():
 
 def parse_note(p: Path) -> tuple[dict, str, list[str], list[str], str]:
     """(frontmatter, title, tags, aliases, body)."""
-    raw = p.read_text(encoding="utf-8", errors="replace")
-    fm: dict = {}
-    body = raw
-    if raw.startswith("---"):
-        end = raw.find("\n---", 3)
-        if end > 0:
-            for line in raw[3:end].splitlines():
-                m = re.match(r"^(\w[\w-]*):\s*(.*)$", line)
-                if m:
-                    val = m.group(2).strip().strip('"')
-                    if val.startswith("[") and val.endswith("]"):
-                        val = [v.strip().strip('"') for v in val[1:-1].split(",") if v.strip()]
-                    fm[m.group(1)] = val
-            body = raw[end + 4 :]
+    raw = p.read_text(encoding="utf-8")
+    block, body = frontmatter.split(raw)
+    fm = frontmatter.parse(block)
     title = fm.get("title") or p.stem
     tags = fm.get("tags", [])
     if isinstance(tags, str):
@@ -129,7 +121,8 @@ def chunks_for(p: Path, rel: str) -> list[dict]:
             "note_title": str(title),
             "heading_path": heading_path,
             "text": chunk_text,
-            "embed_text": contextualize(title, tags, aliases, heading_path, chunk_text),
+            "embed_text": contextualize(title, tags, aliases, heading_path, str(fm.get("description", "")) + "\n" + chunk_text),
+            "description": str(fm.get("description", "")),
             "tags": tags,
             "aliases": aliases,
             "links": extract_links(chunk_text),

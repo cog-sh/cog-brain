@@ -14,8 +14,18 @@ from cog_brain.backends import get_backend
 
 
 def run(full: bool = False) -> str:
-    backend = get_backend()
-    r = backend.sync(full=full)
+    import fcntl
+    config.LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with config.LOCK.open("a") as lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return "another indexer is already running — exit"
+        backend = get_backend()
+        r = backend.sync(full=full)
+    if r.get("errors"):
+        raise RuntimeError(f"index incomplete: failed={len(r['errors'])} changed={r['changed']} "
+                           f"deleted={r['deleted']} total={r['total']}; " + ", ".join(r["errors"]))
     return (f"backend={backend.name} changed={r['changed']} deleted={r['deleted']} "
             f"total={r['total']} elapsed={r['elapsed']}s")
 
@@ -23,19 +33,14 @@ def run(full: bool = False) -> str:
 def watch(full: bool = False) -> None:
     print("watch mode: polling every 3s")
     while True:
-        print(run(full), flush=True)
+        try:
+            print(run(full), flush=True)
+        except Exception as error:
+            print(f"index error: {error}", file=sys.stderr, flush=True)
         time.sleep(3)
 
 
 def main() -> None:
-    import fcntl
-    config.LOCK.parent.mkdir(parents=True, exist_ok=True)
-    lock_file = open(config.LOCK, "w")
-    try:
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        print("another indexer is already running — exit")
-        sys.exit(0)
     ap = argparse.ArgumentParser(prog="cog-brain-index")
     ap.add_argument("--full", action="store_true", help="re-index every note")
     ap.add_argument("--watch", action="store_true", help="poll the vault every 3s")
@@ -46,7 +51,11 @@ def main() -> None:
     if a.watch:
         watch(a.full)
     else:
-        print(run(a.full))
+        try:
+            print(run(a.full))
+        except RuntimeError as error:
+            print(str(error), file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":
